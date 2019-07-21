@@ -14,7 +14,6 @@ using Avalonia.Threading;
 using Avalonia.Input;
 using Avalonia;
 using Avalonia.Styling;
-using Avalonia.Markup.Xaml.Data;
 using Avalonia.Data;
 using Avalonia.Controls.Generators;
 

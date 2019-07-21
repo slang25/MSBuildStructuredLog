@@ -10,6 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
+  <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0-preview.2" />
     <PackageReference Include="GuiLabs.Language.Xml" Version="1.2.27" />
   </ItemGroup>
 
