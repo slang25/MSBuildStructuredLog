@@ -41,6 +41,9 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0-preview.2" />
+  </ItemGroup>
+  <ItemGroup>
     <Page Include="Controls\BuildControl.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
