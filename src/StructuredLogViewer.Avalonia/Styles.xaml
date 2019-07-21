@@ -195,8 +195,8 @@
                             ToolTip.Tip="Close">
                     </Button>
                     <TextBlock MinWidth="50"
-                               Text="{Binding Header}"
-                               VerticalAlignment="Center" />
+                                Text="{Binding Header}"
+                                VerticalAlignment="Center" />
                 </Grid>
             </DataTemplate>
 
@@ -209,19 +209,19 @@
             <ControlTemplate>
                 <Border Name="border"
                         Background="Transparent"
-                        IsVisible="{TemplateBinding IsVisible}">
+                        IsVisible="{Binding IsVisible, RelativeSource={RelativeSource TemplatedParent}}">
                     <Path Width="10"
-                          Height="8"
-                          VerticalAlignment="Center"
-                          HorizontalAlignment="Center"
-                          Fill="{TemplateBinding TextBlock.Foreground}"
-                          Stretch="Uniform"
-                          Data="F1 M 0,0L 2,0L 5,3L 8,0L 10,0L 6,4L 10,8L 8,8L 5,5L 2,8L 0,8L 4,4L 0,0 Z" />
+                            Height="8"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Center"
+                            Fill="{Binding TextBlock.Foreground, RelativeSource={RelativeSource TemplatedParent}}"
+                            Stretch="Uniform"
+                            Data="F1 M 0,0L 2,0L 5,3L 8,0L 10,0L 6,4L 10,8L 8,8L 5,5L 2,8L 0,8L 4,4L 0,0 Z" />
                 </Border>
                 <!--<ControlTemplate.Triggers>
                     <Trigger SourceName="border"
-                             Property="IsMouseOver"
-                             Value="true">
+                                Property="IsMouseOver"
+                                Value="true">
                         <Setter TargetName="border"
                                 Property="Background"
                                 Value="LightBlue" />

@@ -22,7 +22,7 @@
             Fill="#717171"
             HorizontalAlignment="Right"
             VerticalAlignment="Center"
-            Visibility="{Binding ElementName=searchTextBox, Path=Text, Converter={StaticResource stringEmptinessToVisibilityConverter}, ConverterParameter=Invert }"
+            Visibility="{Binding ElementName=searchTextBox, Property=Text, Converter={StaticResource stringEmptinessToVisibilityConverter}, ConverterParameter=Invert }"
             Margin="3"/>
       <Button x:Name="clearSearchButton"
               HorizontalAlignment="Right"
@@ -31,7 +31,7 @@
               Width="20"
               Click="clearSearchButton_Click"
               Template="{DynamicResource closeButtonTemplate}"
-              Visibility="{Binding ElementName=searchTextBox, Path=Text, Converter={StaticResource stringEmptinessToVisibilityConverter} }"/>
+              Visibility="{Binding ElementName=searchTextBox, Property=Text, Converter={StaticResource stringEmptinessToVisibilityConverter} }"/>
     </Grid>
 
     <Grid>

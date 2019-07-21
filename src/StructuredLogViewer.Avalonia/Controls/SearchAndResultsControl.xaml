@@ -21,8 +21,8 @@
                      />
             <!--TODO
             
-                IsVisible="{Binding ElementName=searchTextBox, Path=Text, Converter={DynamicResource StringEmptinessToVisibilityConverter}, ConverterParameter=Invert }"
-                IsVisible="{Binding ElementName=searchTextBox, Path=Text, Converter={DynamicResource StringEmptinessToVisibilityConverter} }"
+                IsVisible="{Binding ElementName=searchTextBox, Property=Text, Converter={DynamicResource StringEmptinessToVisibilityConverter}, ConverterParameter=Invert }"
+                IsVisible="{Binding ElementName=searchTextBox, Property=Text, Converter={DynamicResource StringEmptinessToVisibilityConverter} }"
             -->
         </Grid>
 

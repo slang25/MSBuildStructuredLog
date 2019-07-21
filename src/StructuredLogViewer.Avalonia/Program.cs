@@ -1,4 +1,7 @@
 ﻿using Avalonia;
+using System;
+using System.Runtime.InteropServices;
+using Avalonia.Gtk3;
 
 namespace StructuredLogViewer.Avalonia
 {
@@ -12,6 +15,8 @@ namespace StructuredLogViewer.Avalonia
 
             AppBuilder.Configure<App>()
                 .UsePlatformDetect()
+                .With(new AvaloniaNativePlatformOptions { UseGpu = true })
+                .With(new MacOSPlatformOptions { ShowInDock = true })
                 .Start<MainWindow>();
         }
     }

@@ -1,6 +1,7 @@
 ﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:StructuredLogViewer.Avalonia.Controls;assembly=StructuredLogViewer.Avalonia">
+             xmlns:local="clr-namespace:StructuredLogViewer.Avalonia.Controls;assembly=StructuredLogViewer.Avalonia"
+             x:Class="StructuredLogViewer.Avalonia.Controls.BuildControl">
 
     <local:SplitterPanel Orientation="Vertical"
                          FirstChildRelativeSize="*"
@@ -79,15 +80,15 @@
                              Background="LightYellow">
                         <ListBox.Template>
                             <ControlTemplate>
-                                <Border BorderBrush="{TemplateBinding BorderBrush}"
-                                        BorderThickness="{TemplateBinding BorderThickness}">
+                                <Border BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource TemplatedParent}}" 
+                                        BorderThickness="{Binding BorderThickness, RelativeSource={RelativeSource TemplatedParent}}">
                                     <ItemsPresenter Name="PART_ItemsPresenter"
-                                                    Items="{TemplateBinding Items}"
-                                                    ItemsPanel="{TemplateBinding ItemsPanel}"
-                                                    ItemTemplate="{TemplateBinding ItemTemplate}"
-                                                    Margin="{TemplateBinding Padding}"
-                                                    MemberSelector="{TemplateBinding MemberSelector}"
-                                                    VirtualizationMode="{TemplateBinding VirtualizationMode}" />
+                                                    Items="{Binding Items, RelativeSource={RelativeSource TemplatedParent}}"
+                                                    ItemsPanel="{Binding ItemsPanel, RelativeSource={RelativeSource TemplatedParent}}"
+                                                    ItemTemplate="{Binding ItemTemplate, RelativeSource={RelativeSource TemplatedParent}}"
+                                                    Margin="{Binding Padding, RelativeSource={RelativeSource TemplatedParent}}"
+                                                    MemberSelector="{Binding MemberSelector, RelativeSource={RelativeSource TemplatedParent}}"
+                                                    VirtualizationMode="{Binding VirtualizationMode, RelativeSource={RelativeSource TemplatedParent}}" />
                                 </Border>
                             </ControlTemplate>
                         </ListBox.Template>

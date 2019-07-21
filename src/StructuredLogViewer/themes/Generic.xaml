@@ -867,9 +867,9 @@
     <Setter Property="Background"
             Value="Transparent"/>
     <Setter Property="HorizontalContentAlignment"
-            Value="{Binding Path=HorizontalContentAlignment,RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"/>
+            Value="{Binding Property=HorizontalContentAlignment,RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"/>
     <Setter Property="VerticalContentAlignment"
-            Value="{Binding Path=VerticalContentAlignment,RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"/>
+            Value="{Binding Property=VerticalContentAlignment,RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"/>
     <Setter Property="Padding"
             Value="1,0,0,0"/>
     <Setter Property="Foreground"
@@ -891,7 +891,7 @@
             </Grid.RowDefinitions>
             <ToggleButton x:Name="Expander"
                           Style="{StaticResource &#474;}"
-                          IsChecked="{Binding Path=IsExpanded,RelativeSource={RelativeSource TemplatedParent}}"
+                          IsChecked="{Binding Property=IsExpanded,RelativeSource={RelativeSource TemplatedParent}}"
                           ClickMode="Press"/>
             <Border Name="Bd"
                     Grid.Column="1"
@@ -970,7 +970,7 @@
             Height="8"
             VerticalAlignment="Center"
             HorizontalAlignment="Center"
-            Fill="{Binding Path=(TextElement.Foreground), RelativeSource={RelativeSource Self}}"
+            Fill="{Binding Property=(TextElement.Foreground), RelativeSource={RelativeSource Self}}"
             Stretch="Uniform"
             Data="F1 M 0,0L 2,0L 5,3L 8,0L 10,0L 6,4L 10,8L 8,8L 5,5L 2,8L 0,8L 4,4L 0,0 Z" />
     </Border>
