@@ -1,0 +1,28 @@
+name: .NET
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 6.0.x
+    - name: Build
+      run: dotnet msbuild /r /m /p:Configuration=Release /clp:v=m MSBuildStructuredLog.sln /bl
+    - name: Build macOS
+      uses: cake-build/cake-action@v1
+      with:
+        script-path: build-macos.cake
+        arguments: |
+              configuration: Release
+              settings_skippackageversioncheck: true  
