@@ -196,6 +196,12 @@ public final class BinlogSession: BinlogEngine, @unchecked Sendable {
         }
     }
 
+    public func parentTarget(of id: String) async throws -> NodeSummary {
+        try await call(NodeSummary.self) { handle, json, err in
+            mslog_target_parent(handle, id, json, err)
+        }
+    }
+
     // MARK: - plumbing
 
     private final class ProgressBox {

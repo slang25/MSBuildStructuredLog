@@ -43,6 +43,9 @@ public protocol BinlogEngine: AnyObject, Sendable {
     func timeline() async throws -> BuildTimeline
     func projectGraph() async throws -> ProjectGraph
 
+    /// Resolves a target row's parent-target navigation link.
+    func parentTarget(of id: String) async throws -> NodeSummary
+
     /// Releases the underlying build. The engine is unusable afterwards.
     func close() async
 }

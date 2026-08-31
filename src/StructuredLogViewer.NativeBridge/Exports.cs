@@ -375,6 +375,50 @@ public static unsafe class Exports
         }
     }
 
+    [UnmanagedCallersOnly(EntryPoint = "mslog_target_parent")]
+    public static int MslogTargetParent(long handle, IntPtr nodeId, IntPtr* outJson, IntPtr* errorJson)
+    {
+        Clear(outJson);
+        Clear(errorJson);
+        try
+        {
+            using var lease = SessionTable.Rent(handle);
+            var session = lease.Session;
+            var node = session.ResolveNode(NativeStrings.FromNative(nodeId));
+
+            if (node is not Target target)
+            {
+                throw new InvalidOperationException(
+                    $"Node is a {node.GetType().Name}; only targets have a parent-target link.");
+            }
+
+            // Mirrors the viewers' NodeHyperlinkControl: prefer the node
+            // where a re-entrant target originally built, else find the
+            // named parent target within the same project.
+            BaseNode destination = target.OriginalNode;
+            if (destination == null &&
+                target.ParentTarget is string parentName &&
+                target.Project is Project project)
+            {
+                destination = project.FindFirstDescendant<Target>(
+                    t => t.Name == parentName && t.Project == project);
+            }
+
+            if (destination == null)
+            {
+                throw new InvalidOperationException(
+                    $"Target '{target.ParentTarget}' was not found in this project — it may have built in another project instance.");
+            }
+
+            var summary = NodeFormatter.CreateSummary(session, destination);
+            return Ok(outJson, JsonSerializer.Serialize(summary, BridgeJsonContext.Default.NodeSummaryDto));
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex, errorJson);
+        }
+    }
+
     // ----- search -----
 
     [UnmanagedCallersOnly(EntryPoint = "mslog_search")]

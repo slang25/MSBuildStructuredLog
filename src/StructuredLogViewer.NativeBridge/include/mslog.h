@@ -145,6 +145,16 @@ int32_t mslog_node_preprocess(int64_t handle,
                               char **out_text,
                               char **error_json);
 
+/* Resolves a target's parent-target navigation link (the ↑/↓/→ link the
+ * viewers show after the target name: AfterTargets / BeforeTargets /
+ * DependsOn, carried in the target's props). Returns the destination
+ * node's NodeSummary JSON, or an error when the parent target did not
+ * build in this project instance. */
+int32_t mslog_target_parent(int64_t handle,
+                            const char *node_id,
+                            char **out_json,
+                            char **error_json);
+
 /* --- search ------------------------------------------------------------- */
 
 /* SearchResponse JSON: {query, resultCount, overflow, elapsedMs, roots:

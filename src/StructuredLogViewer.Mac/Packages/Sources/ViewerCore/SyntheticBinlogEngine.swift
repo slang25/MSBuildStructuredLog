@@ -134,6 +134,10 @@ open class SyntheticBinlogEngine: BinlogEngine, @unchecked Sendable {
         throw EngineError.failure(code: "NoStats", message: "No stats for synthetic builds.")
     }
 
+    open func parentTarget(of id: String) async throws -> NodeSummary {
+        throw EngineError.failure(code: "NoLink", message: "Synthetic targets have no parent links.")
+    }
+
     open func projectGraph() async throws -> ProjectGraph {
         // A small diamond graph for previews/tests.
         ProjectGraph(vertices: [

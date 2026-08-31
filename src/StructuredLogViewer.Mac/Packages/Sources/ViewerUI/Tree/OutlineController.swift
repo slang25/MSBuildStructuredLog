@@ -116,15 +116,16 @@ extension OutlineController: NSOutlineViewDelegate {
     public func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
         guard let node = item as? NodeRef else { return nil }
 
-        let cell: NSTableCellView
-        if let reused = outlineView.makeView(withIdentifier: Self.cellIdentifier, owner: self) as? NSTableCellView {
+        let cell: NodeTableCellView
+        if let reused = outlineView.makeView(withIdentifier: Self.cellIdentifier, owner: self) as? NodeTableCellView {
             cell = reused
         } else {
-            cell = NodeCellView.make(identifier: Self.cellIdentifier)
+            cell = NodeTableCellView(identifier: Self.cellIdentifier)
         }
 
         if node.isPlaceholder {
             cell.imageView?.image = nil
+            cell.setLink(text: nil, tooltip: nil, action: nil)
             cell.textField?.attributedStringValue = NSAttributedString(
                 string: "…",
                 attributes: [
@@ -146,7 +147,33 @@ extension OutlineController: NSOutlineViewDelegate {
         cell.textField?.attributedStringValue = NodeStyling.rowText(for: summary)
         cell.textField?.lineBreakMode = .byTruncatingTail
         cell.toolTip = summary.title.count > 120 || summary.title.contains("\n") ? summary.title : nil
+
+        if let linkText = summary.props?["parentTargetText"], !linkText.isEmpty {
+            let nodeId = summary.id
+            cell.setLink(
+                text: linkText,
+                tooltip: summary.props?["parentTargetTooltip"]) { [weak self] in
+                    self?.navigateToParentTarget(of: nodeId)
+                }
+        } else {
+            cell.setLink(text: nil, tooltip: nil, action: nil)
+        }
+
         return cell
+    }
+
+    /// Resolves a target's ↑/↓/→ parent-target link in the engine and
+    /// reveals the destination.
+    private func navigateToParentTarget(of nodeId: String) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let destination = try await self.store.engine.parentTarget(of: nodeId)
+                self.reveal(id: destination.id)
+            } catch {
+                NSSound.beep()
+            }
+        }
     }
 
     public func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
@@ -163,16 +190,21 @@ extension OutlineController: NSOutlineViewDelegate {
     }
 }
 
-enum NodeCellView {
-    static func make(identifier: NSUserInterfaceItemIdentifier) -> NSTableCellView {
-        let cell = NSTableCellView()
-        cell.identifier = identifier
+/// Row cell: icon + title, plus an optional trailing navigation link
+/// (the target rows' ↑/↓/→ parent-target jump, like the other viewers).
+final class NodeTableCellView: NSTableCellView {
+    let linkButton = LinkButton()
+    private var linkAction: (() -> Void)?
+
+    init(identifier: NSUserInterfaceItemIdentifier) {
+        super.init(frame: .zero)
+        self.identifier = identifier
 
         let imageView = NSImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.setContentHuggingPriority(.required, for: .horizontal)
-        cell.imageView = imageView
-        cell.addSubview(imageView)
+        self.imageView = imageView
+        addSubview(imageView)
 
         let textField = NSTextField(labelWithString: "")
         textField.translatesAutoresizingMaskIntoConstraints = false
@@ -180,19 +212,63 @@ enum NodeCellView {
         textField.maximumNumberOfLines = 1
         textField.cell?.truncatesLastVisibleLine = true
         textField.allowsDefaultTighteningForTruncation = false
-        cell.textField = textField
-        cell.addSubview(textField)
+        self.textField = textField
+        addSubview(textField)
+
+        linkButton.translatesAutoresizingMaskIntoConstraints = false
+        linkButton.isBordered = false
+        linkButton.setButtonType(.momentaryChange)
+        linkButton.setContentHuggingPriority(.required, for: .horizontal)
+        linkButton.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        linkButton.target = self
+        linkButton.action = #selector(linkClicked)
+        linkButton.isHidden = true
+        addSubview(linkButton)
+
+        // The link stays visible; a long title truncates instead.
+        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         NSLayoutConstraint.activate([
-            imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-            imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            imageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
+            imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
             imageView.widthAnchor.constraint(equalToConstant: NodeStyling.iconSize),
             imageView.heightAnchor.constraint(equalToConstant: NodeStyling.iconSize),
             textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 4),
-            textField.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -2),
-            textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            textField.centerYAnchor.constraint(equalTo: centerYAnchor),
+            linkButton.leadingAnchor.constraint(equalTo: textField.trailingAnchor, constant: 6),
+            linkButton.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -2),
+            linkButton.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+    }
 
-        return cell
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    func setLink(text: String?, tooltip: String?, action: (() -> Void)?) {
+        guard let text, !text.isEmpty, let action else {
+            linkButton.isHidden = true
+            linkAction = nil
+            return
+        }
+
+        linkButton.attributedTitle = NSAttributedString(string: text, attributes: [
+            .font: NodeStyling.rowFont,
+            .foregroundColor: NSColor.systemPurple,
+        ])
+        linkButton.toolTip = tooltip
+        linkButton.isHidden = false
+        linkAction = action
+    }
+
+    @objc private func linkClicked() {
+        linkAction?()
+    }
+}
+
+/// Borderless button that shows the pointing-hand cursor.
+final class LinkButton: NSButton {
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
     }
 }

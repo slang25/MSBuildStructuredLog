@@ -199,6 +199,17 @@ internal static class NodeFormatter
                 break;
             case Target target:
                 Add("dependsOnTargets", target.DependsOnTargets);
+                if (!string.IsNullOrEmpty(target.ParentTarget))
+                {
+                    // The navigational link the viewers render after the
+                    // target name (↑ AfterTargets / ↓ BeforeTargets /
+                    // → DependsOn). The destination node resolves lazily
+                    // via mslog_target_parent when clicked.
+                    Add("parentTarget", target.ParentTarget);
+                    Add("parentTargetText", target.ParentTargetText?.Trim());
+                    Add("parentTargetTooltip", target.ParentTargetTooltip);
+                }
+
                 break;
         }
 
