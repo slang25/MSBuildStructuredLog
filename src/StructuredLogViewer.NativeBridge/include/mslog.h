@@ -201,6 +201,16 @@ int32_t mslog_timeline(int64_t handle,
                        char **out_json,
                        char **error_json);
 
+/* --- project reference graph -------------------------------------------- */
+
+/* ProjectGraph JSON (the WPF viewer's Project References tab): {vertices:
+ * [{value (full path), title, height, depth, outgoing: [indices into
+ * vertices]}]}. Cycles were removed and height/depth precomputed during
+ * analysis. Empty vertices array when the build has no P2P references. */
+int32_t mslog_project_graph(int64_t handle,
+                            char **out_json,
+                            char **error_json);
+
 /* --- statistics --------------------------------------------------------- */
 
 /* Stats JSON mirroring the viewer's Statistics dialog (re-reads the file

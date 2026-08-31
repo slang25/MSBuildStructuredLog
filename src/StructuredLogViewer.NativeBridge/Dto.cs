@@ -236,6 +236,29 @@ public sealed class TimelineDto
     public List<TimelineLaneDto> Lanes { get; set; }
 }
 
+public sealed class ProjectGraphVertexDto
+{
+    /// <summary>Full project path (the graph key).</summary>
+    public string Value { get; set; }
+
+    /// <summary>Short display name.</summary>
+    public string Title { get; set; }
+
+    /// <summary>Longest path to a sink (0 = leaf dependency).</summary>
+    public int Height { get; set; }
+
+    /// <summary>Longest path from a source (0 = top-level project).</summary>
+    public int Depth { get; set; }
+
+    /// <summary>Direct references, as indices into the vertices array.</summary>
+    public List<int> Outgoing { get; set; }
+}
+
+public sealed class ProjectGraphDto
+{
+    public List<ProjectGraphVertexDto> Vertices { get; set; }
+}
+
 public sealed class ErrorDto
 {
     public string Code { get; set; }

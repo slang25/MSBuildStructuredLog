@@ -2,11 +2,13 @@ import AppKit
 import SwiftUI
 import ViewerCore
 
-/// The Timeline tab (the WPF viewer's Timeline/Tracing view): one lane
-/// per MSBuild worker node, blocks nested flame-chart style by depth.
-/// Custom-drawn NSView in a scroll view — draws only what intersects the
-/// dirty rect, so multi-thousand-block builds stay fluid. Pinch (or the
-/// zoom buttons) zooms time; click reveals the node in the build tree.
+/// The Tracing view (the WPF viewer's newer Timeline/Tracing tab): one
+/// lane per MSBuild worker node, blocks nested flame-chart style.
+/// Nesting depth is computed client-side over the *visible* blocks, so
+/// the kind filters (Evaluations/Projects/Targets/Tasks, with counts —
+/// same as WPF's Tracing menu) re-compact the chart instead of leaving
+/// gaps. Custom-drawn NSView with dirty-rect culling; pinch or ⌥-scroll
+/// zooms; clicking a block reveals the node in the build tree.
 struct TimelineHostView: View {
     let session: BuildSession
     let onRevealNode: (String) -> Void
@@ -14,6 +16,7 @@ struct TimelineHostView: View {
     @State private var timeline: BuildTimeline?
     @State private var errorMessage: String?
     @State private var pxPerMs: Double = 0
+    @State private var filter = TracingFilter()
 
     var body: some View {
         Group {
@@ -27,6 +30,7 @@ struct TimelineHostView: View {
                     VStack(spacing: 0) {
                         TimelineScrollView(
                             timeline: timeline,
+                            filter: filter,
                             pxPerMs: $pxPerMs,
                             onBlockClick: { onRevealNode($0.id) })
                         Divider()
@@ -51,11 +55,26 @@ struct TimelineHostView: View {
     }
 
     private func controls(_ timeline: BuildTimeline) -> some View {
-        HStack(spacing: 10) {
+        let counts = TracingFilter.counts(of: timeline)
+        return HStack(spacing: 10) {
             Text("\(timeline.lanes.count) node\(timeline.lanes.count == 1 ? "" : "s")")
                 .foregroundStyle(.secondary)
             Text(NodeStyling.formatDuration(milliseconds: timeline.durationMs))
                 .foregroundStyle(.secondary)
+
+            Menu {
+                Toggle("Show Evaluations (\(counts.evaluations))", isOn: $filter.showEvaluations)
+                Toggle("Show Projects (\(counts.projects))", isOn: $filter.showProjects)
+                Toggle("Show Targets (\(counts.targets))", isOn: $filter.showTargets)
+                Toggle("Show Tasks (\(counts.tasks))", isOn: $filter.showTasks)
+                if counts.other > 0 {
+                    Toggle("Show Other (\(counts.other))", isOn: $filter.showOther)
+                }
+            } label: {
+                Label("Filter", systemImage: filter.isDefault ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
 
             Spacer()
 
@@ -110,6 +129,68 @@ struct TimelineHostView: View {
     }
 }
 
+/// Which block kinds are visible (WPF Tracing's Show Evaluations /
+/// Projects / Targets / Tasks menu).
+struct TracingFilter: Equatable {
+    var showEvaluations = true
+    var showProjects = true
+    var showTargets = true
+    var showTasks = true
+    var showOther = true
+
+    var isDefault: Bool {
+        showEvaluations && showProjects && showTargets && showTasks && showOther
+    }
+
+    enum Category {
+        case evaluation, project, target, task, other
+    }
+
+    static func category(of kind: String) -> Category {
+        switch kind {
+        case "ProjectEvaluation": return .evaluation
+        case "Project": return .project
+        case "Target": return .target
+        case "Task": return .task
+        default: return .other
+        }
+    }
+
+    func allows(_ kind: String) -> Bool {
+        switch Self.category(of: kind) {
+        case .evaluation: return showEvaluations
+        case .project: return showProjects
+        case .target: return showTargets
+        case .task: return showTasks
+        case .other: return showOther
+        }
+    }
+
+    struct Counts {
+        var evaluations = 0
+        var projects = 0
+        var targets = 0
+        var tasks = 0
+        var other = 0
+    }
+
+    static func counts(of timeline: BuildTimeline) -> Counts {
+        var counts = Counts()
+        for lane in timeline.lanes {
+            for block in lane.blocks {
+                switch category(of: block.kind) {
+                case .evaluation: counts.evaluations += 1
+                case .project: counts.projects += 1
+                case .target: counts.targets += 1
+                case .task: counts.tasks += 1
+                case .other: counts.other += 1
+                }
+            }
+        }
+        return counts
+    }
+}
+
 /// Geometry + palette shared by the view and hit testing.
 enum TimelineRender {
     static let laneHeaderHeight: CGFloat = 22
@@ -133,26 +214,45 @@ enum TimelineRender {
         }
     }
 
-    struct LaneLayout {
-        let lane: TimelineLane
-        let yOffset: CGFloat
-        let height: CGFloat
+    struct PlacedBlock {
+        let block: TimelineBlock
+        let indent: Int
     }
 
-    static func layoutLanes(_ timeline: BuildTimeline) -> [LaneLayout] {
+    struct LaneLayout {
+        let laneId: Int
+        let yOffset: CGFloat
+        let height: CGFloat
+        /// Sorted by start, indent computed over visible blocks only.
+        let rows: [PlacedBlock]
+    }
+
+    /// Applies the kind filter and re-computes nesting from time spans
+    /// (see TimelineNesting): filtered-out levels compact away, as do the
+    /// empty indent levels the raw tree depth would leave.
+    static func layoutLanes(_ timeline: BuildTimeline, filter: TracingFilter) -> [LaneLayout] {
         var result: [LaneLayout] = []
         var y = rulerHeight
+
         for lane in timeline.lanes {
-            let height = laneHeaderHeight + CGFloat(lane.maxIndent + 1) * blockRowHeight
-            result.append(LaneLayout(lane: lane, yOffset: y, height: height))
+            let visible = lane.blocks.filter { filter.allows($0.kind) }
+            guard !visible.isEmpty else { continue }
+
+            let (placed, maxIndent) = TimelineNesting.place(visible)
+            let rows = placed.map { PlacedBlock(block: $0.block, indent: $0.indent) }
+
+            let height = laneHeaderHeight + CGFloat(maxIndent + 1) * blockRowHeight
+            result.append(LaneLayout(laneId: lane.nodeId, yOffset: y, height: height, rows: rows))
             y += height + laneGap
         }
+
         return result
     }
 }
 
 struct TimelineScrollView: NSViewRepresentable {
     let timeline: BuildTimeline
+    let filter: TracingFilter
     @Binding var pxPerMs: Double
     let onBlockClick: (TimelineBlock) -> Void
 
@@ -187,8 +287,9 @@ struct TimelineScrollView: NSViewRepresentable {
         coordinator.timeline = timeline
         coordinator.setPxPerMs = { value in DispatchQueue.main.async { pxPerMs = value } }
 
-        if content.lanes.isEmpty || content.totalDurationMs != timeline.durationMs {
-            content.configure(timeline: timeline)
+        if content.lanes.isEmpty || content.totalDurationMs != timeline.durationMs || coordinator.lastFilter != filter {
+            coordinator.lastFilter = filter
+            content.configure(timeline: timeline, filter: filter)
         }
 
         if pxPerMs <= 0 {
@@ -210,6 +311,7 @@ struct TimelineScrollView: NSViewRepresentable {
         weak var contentView: TimelineContentView?
         weak var scrollView: NSScrollView?
         var timeline: BuildTimeline?
+        var lastFilter: TracingFilter?
         var needsFit = false
         var setPxPerMs: ((Double) -> Void)?
 
@@ -247,11 +349,12 @@ final class TimelineContentView: NSView {
 
     override var isFlipped: Bool { true }
 
-    func configure(timeline: BuildTimeline) {
+    func configure(timeline: BuildTimeline, filter: TracingFilter) {
         totalDurationMs = timeline.durationMs
-        lanes = TimelineRender.layoutLanes(timeline)
+        lanes = TimelineRender.layoutLanes(timeline, filter: filter)
         totalHeight = (lanes.last.map { $0.yOffset + $0.height } ?? 0) + TimelineRender.laneGap
         resizeToFit()
+        needsDisplay = true
     }
 
     func setZoom(_ newPxPerMs: CGFloat) {
@@ -309,7 +412,7 @@ final class TimelineContentView: NSView {
 
             // Lane header (drawn at the visible left edge so it stays put
             // during horizontal scrolling).
-            let title = layout.lane.nodeId == 0 ? "Evaluation" : "Node \(layout.lane.nodeId)"
+            let title = layout.laneId == 0 ? "Evaluation" : "Node \(layout.laneId)"
             (title as NSString).draw(
                 at: NSPoint(x: visibleRect.minX + TimelineRender.leftPadding, y: layout.yOffset + 4),
                 withAttributes: headerAttributes)
@@ -320,7 +423,8 @@ final class TimelineContentView: NSView {
 
             let rowsTop = layout.yOffset + TimelineRender.laneHeaderHeight
 
-            for block in layout.lane.blocks {
+            for placed in layout.rows {
+                let block = placed.block
                 if block.start > visibleEndMs {
                     break // sorted by start; nothing further can be visible
                 }
@@ -331,7 +435,7 @@ final class TimelineContentView: NSView {
                 let x0 = xFor(ms: block.start)
                 let x1 = xFor(ms: block.end)
                 let width = max(x1 - x0, TimelineRender.minVisiblePx)
-                let y = rowsTop + CGFloat(block.indent) * TimelineRender.blockRowHeight
+                let y = rowsTop + CGFloat(placed.indent) * TimelineRender.blockRowHeight
                 let rect = NSRect(x: x0, y: y + 1, width: width, height: TimelineRender.blockRowHeight - 2)
 
                 let color = TimelineRender.color(kind: block.kind, hasError: block.hasError)
@@ -399,7 +503,7 @@ final class TimelineContentView: NSView {
 
     // MARK: - interaction
 
-    private func block(at point: NSPoint) -> TimelineBlock? {
+    private func placedBlock(at point: NSPoint) -> TimelineBlock? {
         for layout in lanes {
             guard point.y >= layout.yOffset + TimelineRender.laneHeaderHeight,
                   point.y < layout.yOffset + layout.height else { continue }
@@ -408,22 +512,13 @@ final class TimelineContentView: NSView {
             let ms = msFor(x: point.x)
 
             // Sorted by start; the last starting block at this indent that
-            // still spans `ms` is the visually topmost one.
+            // still spans the point (or its minimum-width sliver) wins.
             var hit: TimelineBlock?
-            for block in layout.lane.blocks {
-                if block.start > ms { break }
-                if block.indent == indent && block.end >= ms {
-                    // Also allow hits on the minimum-width sliver of tiny blocks.
-                    hit = block
-                }
-            }
-
-            if hit == nil {
-                for block in layout.lane.blocks {
-                    if block.start > ms { break }
-                    if block.indent == indent && xFor(ms: block.end) + TimelineRender.minVisiblePx >= point.x {
-                        hit = block
-                    }
+            for placed in layout.rows {
+                if placed.block.start > ms { break }
+                if placed.indent == indent,
+                   xFor(ms: placed.block.end) + TimelineRender.minVisiblePx >= point.x {
+                    hit = placed.block
                 }
             }
 
@@ -435,7 +530,7 @@ final class TimelineContentView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if let block = block(at: point) {
+        if let block = placedBlock(at: point) {
             onBlockClick?(block)
         } else {
             super.mouseDown(with: event)
@@ -473,7 +568,7 @@ final class TimelineContentView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if let block = block(at: point) {
+        if let block = placedBlock(at: point) {
             toolTip = tooltipText(block)
         } else {
             toolTip = nil

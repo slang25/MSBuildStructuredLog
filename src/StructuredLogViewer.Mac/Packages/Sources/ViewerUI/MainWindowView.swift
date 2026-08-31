@@ -60,13 +60,18 @@ struct MainWindowView: View {
 
     enum DetailMode: String, CaseIterable {
         case tree
-        case timeline
+        case tracing
+        case projectGraph
     }
 
     @State private var pane: SidebarPane = .searchLog
-    // -timeline launch argument opens in timeline mode (debug/testing aid).
-    @State private var detailMode: DetailMode =
-        ProcessInfo.processInfo.arguments.contains("-timeline") ? .timeline : .tree
+    // -tracing / -graph launch arguments pick the initial mode (debug aid).
+    @State private var detailMode: DetailMode = {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-tracing") || arguments.contains("-timeline") { return .tracing }
+        if arguments.contains("-graph") { return .projectGraph }
+        return .tree
+    }()
     @State private var inspectorPresented = false
     @State private var showingStats = false
     @State private var selectedNode: NodeSummary?
@@ -144,7 +149,7 @@ struct MainWindowView: View {
             }
 
             if let store = session.store {
-                // The tree stays alive (hidden) while the timeline shows so
+                // The tree stays alive (hidden) while other views show so
                 // expansion, selection and pending reveals are preserved.
                 ZStack {
                     BuildTreeView(
@@ -155,10 +160,17 @@ struct MainWindowView: View {
                         onDoubleClick: handleDoubleClick)
                         .opacity(detailMode == .tree ? 1 : 0)
 
-                    if detailMode == .timeline {
+                    if detailMode == .tracing {
                         TimelineHostView(session: session) { nodeId in
                             detailMode = .tree
                             session.requestReveal(nodeId: nodeId)
+                        }
+                        .background(Color(nsColor: .textBackgroundColor))
+                    } else if detailMode == .projectGraph {
+                        ProjectGraphHostView(session: session) { query in
+                            pane = .searchLog
+                            session.searchLog.query = query
+                            session.searchLog.searchNow()
                         }
                         .background(Color(nsColor: .textBackgroundColor))
                     }
@@ -201,11 +213,14 @@ struct MainWindowView: View {
         ToolbarItemGroup {
             Picker("View", selection: $detailMode) {
                 Image(systemName: "list.bullet.indent")
-                    .help("Build tree")
+                    .help("Log tree")
                     .tag(DetailMode.tree)
                 Image(systemName: "chart.bar.xaxis")
-                    .help("Timeline")
-                    .tag(DetailMode.timeline)
+                    .help("Tracing timeline")
+                    .tag(DetailMode.tracing)
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+                    .help("Project references")
+                    .tag(DetailMode.projectGraph)
             }
             .pickerStyle(.segmented)
 

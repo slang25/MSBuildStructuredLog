@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Build.Logging.StructuredLogger;
@@ -539,6 +540,71 @@ public static unsafe class Exports
 
             var timeline = TimelineFormatter.Build(lease.Session, operation.Token);
             return Ok(outJson, JsonSerializer.Serialize(timeline, BridgeJsonContext.Default.TimelineDto));
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex, errorJson);
+        }
+    }
+
+    // ----- project reference graph -----
+
+    [UnmanagedCallersOnly(EntryPoint = "mslog_project_graph")]
+    public static int MslogProjectGraph(long handle, IntPtr* outJson, IntPtr* errorJson)
+    {
+        Clear(outJson);
+        Clear(errorJson);
+        try
+        {
+            using var lease = SessionTable.Rent(handle);
+            var graph = lease.Session.Build.ProjectReferenceGraph?.Graph;
+
+            var dto = new ProjectGraphDto
+            {
+                Vertices = new System.Collections.Generic.List<ProjectGraphVertexDto>()
+            };
+
+            if (graph != null && !graph.IsEmpty)
+            {
+                // First pass: stable order + index lookup, then edges.
+                var vertices = graph.Vertices
+                    .OrderBy(v => v.Title ?? v.Value, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                var indexOf = new System.Collections.Generic.Dictionary<Microsoft.Build.Logging.StructuredLogger.Vertex, int>(vertices.Length);
+                for (int i = 0; i < vertices.Length; i++)
+                {
+                    indexOf[vertices[i]] = i;
+                }
+
+                foreach (var vertex in vertices)
+                {
+                    // Titles come pre-quoted for the search DSL
+                    // (project("X")); display wants them bare.
+                    var vertexDto = new ProjectGraphVertexDto
+                    {
+                        Value = vertex.Value,
+                        Title = (vertex.Title ?? vertex.Value).Trim('"'),
+                        Height = vertex.Height,
+                        Depth = vertex.Depth
+                    };
+
+                    if (vertex.OutDegree > 0)
+                    {
+                        vertexDto.Outgoing = new System.Collections.Generic.List<int>(vertex.OutDegree);
+                        foreach (var target in vertex.Outgoing)
+                        {
+                            if (indexOf.TryGetValue(target, out int index))
+                            {
+                                vertexDto.Outgoing.Add(index);
+                            }
+                        }
+                    }
+
+                    dto.Vertices.Add(vertexDto);
+                }
+            }
+
+            return Ok(outJson, JsonSerializer.Serialize(dto, BridgeJsonContext.Default.ProjectGraphDto));
         }
         catch (Exception ex)
         {

@@ -134,6 +134,16 @@ open class SyntheticBinlogEngine: BinlogEngine, @unchecked Sendable {
         throw EngineError.failure(code: "NoStats", message: "No stats for synthetic builds.")
     }
 
+    open func projectGraph() async throws -> ProjectGraph {
+        // A small diamond graph for previews/tests.
+        ProjectGraph(vertices: [
+            ProjectGraphVertex(value: "/App.csproj", title: "App", height: 2, depth: 0, outgoing: [1, 2]),
+            ProjectGraphVertex(value: "/Lib1.csproj", title: "Lib1", height: 1, depth: 1, outgoing: [3]),
+            ProjectGraphVertex(value: "/Lib2.csproj", title: "Lib2", height: 1, depth: 1, outgoing: [3]),
+            ProjectGraphVertex(value: "/Core.csproj", title: "Core", height: 0, depth: 2),
+        ])
+    }
+
     open func timeline() async throws -> BuildTimeline {
         // A small deterministic two-lane timeline for previews/tests.
         var lanes: [TimelineLane] = []

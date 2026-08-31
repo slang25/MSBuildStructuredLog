@@ -190,6 +190,12 @@ public final class BinlogSession: BinlogEngine, @unchecked Sendable {
         }
     }
 
+    public func projectGraph() async throws -> ProjectGraph {
+        try await call(ProjectGraph.self) { handle, json, err in
+            mslog_project_graph(handle, json, err)
+        }
+    }
+
     // MARK: - plumbing
 
     private final class ProgressBox {

@@ -343,6 +343,39 @@ public struct BuildTimeline: Codable, Sendable {
     }
 }
 
+public struct ProjectGraphVertex: Codable, Sendable, Equatable {
+    /// Full project path (the graph key).
+    public var value: String
+
+    /// Short display name.
+    public var title: String
+
+    /// Longest path to a sink (0 = leaf dependency).
+    public var height: Int
+
+    /// Longest path from a source (0 = top-level project).
+    public var depth: Int
+
+    /// Direct references, as indices into the vertices array.
+    public var outgoing: [Int]?
+
+    public init(value: String, title: String, height: Int, depth: Int, outgoing: [Int]? = nil) {
+        self.value = value
+        self.title = title
+        self.height = height
+        self.depth = depth
+        self.outgoing = outgoing
+    }
+}
+
+public struct ProjectGraph: Codable, Sendable {
+    public var vertices: [ProjectGraphVertex]
+
+    public init(vertices: [ProjectGraphVertex]) {
+        self.vertices = vertices
+    }
+}
+
 public struct BridgeErrorPayload: Codable, Sendable {
     public var code: String
     public var message: String

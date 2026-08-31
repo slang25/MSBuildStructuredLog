@@ -41,6 +41,7 @@ public protocol BinlogEngine: AnyObject, Sendable {
 
     func stats() async throws -> BuildStats
     func timeline() async throws -> BuildTimeline
+    func projectGraph() async throws -> ProjectGraph
 
     /// Releases the underlying build. The engine is unusable afterwards.
     func close() async
