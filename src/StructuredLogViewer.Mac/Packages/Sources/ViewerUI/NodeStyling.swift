@@ -107,8 +107,15 @@ public enum NodeStyling {
 
     // MARK: - row text
 
-    public static let rowFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-    public static let durationFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+    // Row metrics for the main tree: comfortable macOS list sizing
+    // (13pt system text, 24pt rows, 18pt icons).
+    public static let rowHeight: CGFloat = 24
+    public static let iconSize: CGFloat = 18
+    public static let indentPerLevel: CGFloat = 16
+    public static let rowFontSize: CGFloat = NSFont.systemFontSize
+    public static let rowFont = NSFont.systemFont(ofSize: rowFontSize)
+    public static let rowBoldFont = NSFont.boldSystemFont(ofSize: rowFontSize)
+    public static let durationFont = NSFont.monospacedDigitSystemFont(ofSize: rowFontSize - 1, weight: .regular)
 
     /// Rows are one fixed-height line; attributed strings need the
     /// truncation carried in their own paragraph style.
@@ -161,7 +168,7 @@ public enum NodeStyling {
                 ]))
             } else if span.isHighlight == true {
                 text.append(NSAttributedString(string: singleLine(span.text), attributes: [
-                    .font: NSFont.boldSystemFont(ofSize: NSFont.smallSystemFontSize),
+                    .font: rowBoldFont,
                     .foregroundColor: NSColor.controlAccentColor,
                     .paragraphStyle: singleLineStyle,
                 ]))

@@ -525,6 +525,27 @@ public static unsafe class Exports
         }
     }
 
+    // ----- timeline -----
+
+    [UnmanagedCallersOnly(EntryPoint = "mslog_timeline")]
+    public static int MslogTimeline(long handle, long opId, IntPtr* outJson, IntPtr* errorJson)
+    {
+        Clear(outJson);
+        Clear(errorJson);
+        try
+        {
+            using var lease = SessionTable.Rent(handle);
+            using var operation = OperationRegistry.Begin(opId);
+
+            var timeline = TimelineFormatter.Build(lease.Session, operation.Token);
+            return Ok(outJson, JsonSerializer.Serialize(timeline, BridgeJsonContext.Default.TimelineDto));
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex, errorJson);
+        }
+    }
+
     // ----- plumbing -----
 
     private static void InvokeProgress(IntPtr callback, IntPtr context, double ratio)

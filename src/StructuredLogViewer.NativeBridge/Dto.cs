@@ -196,6 +196,46 @@ public sealed class StatsDto
     public StatsRecordDto Records { get; set; }
 }
 
+public sealed class TimelineBlockDto
+{
+    public string Id { get; set; }
+    public string Kind { get; set; }
+    public string Text { get; set; }
+
+    /// <summary>Milliseconds relative to the timeline start.</summary>
+    public double Start { get; set; }
+
+    public double End { get; set; }
+
+    /// <summary>Nesting depth within the lane (0 = outermost).</summary>
+    public int Indent { get; set; }
+
+    public bool HasError { get; set; }
+}
+
+public sealed class TimelineLaneDto
+{
+    /// <summary>MSBuild worker node id (0 = evaluation/main).</summary>
+    public int NodeId { get; set; }
+
+    /// <summary>Sorted by start time.</summary>
+    public List<TimelineBlockDto> Blocks { get; set; }
+
+    public int MaxIndent { get; set; }
+}
+
+public sealed class TimelineDto
+{
+    /// <summary>Timeline origin (earliest block start), ISO-8601.</summary>
+    public string StartTime { get; set; }
+
+    /// <summary>Total span in milliseconds.</summary>
+    public double DurationMs { get; set; }
+
+    /// <summary>Sorted by node id.</summary>
+    public List<TimelineLaneDto> Lanes { get; set; }
+}
+
 public sealed class ErrorDto
 {
     public string Code { get; set; }

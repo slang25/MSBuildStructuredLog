@@ -184,6 +184,12 @@ public final class BinlogSession: BinlogEngine, @unchecked Sendable {
         }
     }
 
+    public func timeline() async throws -> BuildTimeline {
+        try await call(BuildTimeline.self) { handle, json, err in
+            mslog_timeline(handle, 0, json, err)
+        }
+    }
+
     // MARK: - plumbing
 
     private final class ProgressBox {

@@ -189,6 +189,18 @@ int32_t mslog_files_search(int64_t handle,
                            char **out_json,
                            char **error_json);
 
+/* --- timeline ----------------------------------------------------------- */
+
+/* Timeline JSON (the WPF viewer's Timeline/Tracing tab): {startTime,
+ * durationMs, lanes: [{nodeId, maxIndent, blocks: [{id, kind, text,
+ * start, end, indent, hasError}]}]}. One lane per MSBuild worker node;
+ * block times are milliseconds relative to startTime; blocks are sorted
+ * by start. */
+int32_t mslog_timeline(int64_t handle,
+                       int64_t op_id,
+                       char **out_json,
+                       char **error_json);
+
 /* --- statistics --------------------------------------------------------- */
 
 /* Stats JSON mirroring the viewer's Statistics dialog (re-reads the file

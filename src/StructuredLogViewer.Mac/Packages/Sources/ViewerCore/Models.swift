@@ -290,6 +290,59 @@ public struct BuildStats: Codable, Sendable {
     public var records: StatsRecord?
 }
 
+public struct TimelineBlock: Codable, Sendable, Equatable {
+    public var id: String
+    public var kind: String
+    public var text: String?
+
+    /// Milliseconds relative to the timeline start.
+    public var start: Double
+    public var end: Double
+
+    /// Nesting depth within the lane (0 = outermost).
+    public var indent: Int
+    public var hasError: Bool
+
+    public var duration: Double { end - start }
+
+    public init(id: String, kind: String, text: String? = nil, start: Double, end: Double, indent: Int = 0, hasError: Bool = false) {
+        self.id = id
+        self.kind = kind
+        self.text = text
+        self.start = start
+        self.end = end
+        self.indent = indent
+        self.hasError = hasError
+    }
+}
+
+public struct TimelineLane: Codable, Sendable {
+    /// MSBuild worker node id (0 = evaluation/main).
+    public var nodeId: Int
+    public var maxIndent: Int
+
+    /// Sorted by start time.
+    public var blocks: [TimelineBlock]
+
+    public init(nodeId: Int, maxIndent: Int, blocks: [TimelineBlock]) {
+        self.nodeId = nodeId
+        self.maxIndent = maxIndent
+        self.blocks = blocks
+    }
+}
+
+public struct BuildTimeline: Codable, Sendable {
+    public var startTime: String?
+    public var durationMs: Double
+    public var lanes: [TimelineLane]
+
+    public init(startTime: String? = nil, durationMs: Double, lanes: [TimelineLane]) {
+        self.startTime = startTime
+        self.durationMs = durationMs
+        self.lanes = lanes
+    }
+}
+
 public struct BridgeErrorPayload: Codable, Sendable {
     public var code: String
     public var message: String

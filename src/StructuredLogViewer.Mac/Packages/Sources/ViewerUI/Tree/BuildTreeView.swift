@@ -168,7 +168,7 @@ public struct BuildTreeView: NSViewRepresentable {
         outlineView.usesAlternatingRowBackgroundColors = false
         outlineView.allowsMultipleSelection = false
         outlineView.autoresizesOutlineColumn = false
-        outlineView.indentationPerLevel = 14
+        outlineView.indentationPerLevel = NodeStyling.indentPerLevel
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("node"))
         column.resizingMask = .autoresizingMask

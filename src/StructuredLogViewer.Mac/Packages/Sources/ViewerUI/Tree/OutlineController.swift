@@ -136,8 +136,10 @@ extension OutlineController: NSOutlineViewDelegate {
 
         let summary = node.summary
         let style = NodeStyling.style(for: summary)
+        let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: NodeStyling.rowFontSize, weight: .regular)
+            .applying(.init(paletteColors: [NodeStyling.stateAccent(for: summary) ?? style.color]))
         let image = NSImage(systemSymbolName: style.symbolName, accessibilityDescription: summary.kind)?
-            .withSymbolConfiguration(.init(paletteColors: [NodeStyling.stateAccent(for: summary) ?? style.color]))
+            .withSymbolConfiguration(symbolConfiguration)
         cell.imageView?.image = image
         cell.textField?.attributedStringValue = NodeStyling.rowText(for: summary)
         cell.textField?.lineBreakMode = .byTruncatingTail
@@ -146,7 +148,7 @@ extension OutlineController: NSOutlineViewDelegate {
     }
 
     public func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        20
+        NodeStyling.rowHeight
     }
 
     public func outlineViewSelectionDidChange(_ notification: Notification) {
@@ -182,8 +184,8 @@ enum NodeCellView {
         NSLayoutConstraint.activate([
             imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
             imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-            imageView.widthAnchor.constraint(equalToConstant: 16),
-            imageView.heightAnchor.constraint(equalToConstant: 16),
+            imageView.widthAnchor.constraint(equalToConstant: NodeStyling.iconSize),
+            imageView.heightAnchor.constraint(equalToConstant: NodeStyling.iconSize),
             textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 4),
             textField.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -2),
             textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),

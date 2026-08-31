@@ -40,6 +40,7 @@ public protocol BinlogEngine: AnyObject, Sendable {
     func searchFiles(term: String, maxResults: Int) async throws -> FileSearchResponse
 
     func stats() async throws -> BuildStats
+    func timeline() async throws -> BuildTimeline
 
     /// Releases the underlying build. The engine is unusable afterwards.
     func close() async

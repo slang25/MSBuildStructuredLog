@@ -58,7 +58,15 @@ public struct BinlogDocumentView: View {
 struct MainWindowView: View {
     @Bindable var session: BuildSession
 
+    enum DetailMode: String, CaseIterable {
+        case tree
+        case timeline
+    }
+
     @State private var pane: SidebarPane = .searchLog
+    // -timeline launch argument opens in timeline mode (debug/testing aid).
+    @State private var detailMode: DetailMode =
+        ProcessInfo.processInfo.arguments.contains("-timeline") ? .timeline : .tree
     @State private var inspectorPresented = false
     @State private var showingStats = false
     @State private var selectedNode: NodeSummary?
@@ -127,19 +135,34 @@ struct MainWindowView: View {
 
     private var detail: some View {
         VStack(spacing: 0) {
-            JumpBarView(chain: jumpChain) { element in
-                session.requestReveal(nodeId: element.id)
+            if detailMode == .tree {
+                JumpBarView(chain: jumpChain) { element in
+                    session.requestReveal(nodeId: element.id)
+                }
+
+                Divider()
             }
 
-            Divider()
-
             if let store = session.store {
-                BuildTreeView(
-                    store: store,
-                    revealRequest: session.revealRequest,
-                    menuActions: menuActions,
-                    onSelect: handleSelect,
-                    onDoubleClick: handleDoubleClick)
+                // The tree stays alive (hidden) while the timeline shows so
+                // expansion, selection and pending reveals are preserved.
+                ZStack {
+                    BuildTreeView(
+                        store: store,
+                        revealRequest: session.revealRequest,
+                        menuActions: menuActions,
+                        onSelect: handleSelect,
+                        onDoubleClick: handleDoubleClick)
+                        .opacity(detailMode == .tree ? 1 : 0)
+
+                    if detailMode == .timeline {
+                        TimelineHostView(session: session) { nodeId in
+                            detailMode = .tree
+                            session.requestReveal(nodeId: nodeId)
+                        }
+                        .background(Color(nsColor: .textBackgroundColor))
+                    }
+                }
             }
 
             Divider()
@@ -176,6 +199,16 @@ struct MainWindowView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup {
+            Picker("View", selection: $detailMode) {
+                Image(systemName: "list.bullet.indent")
+                    .help("Build tree")
+                    .tag(DetailMode.tree)
+                Image(systemName: "chart.bar.xaxis")
+                    .help("Timeline")
+                    .tag(DetailMode.timeline)
+            }
+            .pickerStyle(.segmented)
+
             Button {
                 session.reload()
             } label: {

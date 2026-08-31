@@ -134,5 +134,25 @@ open class SyntheticBinlogEngine: BinlogEngine, @unchecked Sendable {
         throw EngineError.failure(code: "NoStats", message: "No stats for synthetic builds.")
     }
 
+    open func timeline() async throws -> BuildTimeline {
+        // A small deterministic two-lane timeline for previews/tests.
+        var lanes: [TimelineLane] = []
+        for laneId in 0..<2 {
+            var blocks: [TimelineBlock] = []
+            for i in 0..<8 {
+                let start = Double(i) * 120 + Double(laneId) * 40
+                blocks.append(TimelineBlock(
+                    id: "0/\(laneId)/\(i)",
+                    kind: i % 3 == 0 ? "Project" : (i % 3 == 1 ? "Target" : "Task"),
+                    text: "Block \(laneId).\(i)",
+                    start: start,
+                    end: start + 100,
+                    indent: i % 3))
+            }
+            lanes.append(TimelineLane(nodeId: laneId, maxIndent: 2, blocks: blocks))
+        }
+        return BuildTimeline(durationMs: 1000, lanes: lanes)
+    }
+
     open func close() async {}
 }
