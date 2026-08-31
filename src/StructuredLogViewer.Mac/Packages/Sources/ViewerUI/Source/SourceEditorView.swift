@@ -143,6 +143,10 @@ struct SourceEditorView: NSViewRepresentable {
 final class LineNumberRulerView: NSRulerView {
     private weak var textView: NSTextView?
     private var lineStarts: [Int] = []
+    /// Text length `lineStarts` was built from; -1 when there is no index.
+    private var indexedLength = -1
+    private var pendingThickness: CGFloat?
+    private var rebuildScheduled = false
 
     init(textView: NSTextView) {
         self.textView = textView
@@ -165,13 +169,22 @@ final class LineNumberRulerView: NSRulerView {
         invalidateLineIndex()
     }
 
+    /// Rebuilds the index now. Only call this from a plain run-loop turn —
+    /// it can change `ruleThickness`, which re-tiles the scroll view.
     func invalidateLineIndex() {
-        lineStarts = []
+        rebuildLineIndex()
         needsDisplay = true
     }
 
-    private func buildLineIndexIfNeeded() {
-        guard lineStarts.isEmpty, let text = textView?.string as NSString? else { return }
+    private func rebuildLineIndex() {
+        rebuildScheduled = false
+
+        guard let text = textView?.string as NSString? else {
+            lineStarts = []
+            indexedLength = -1
+            return
+        }
+
         var starts: [Int] = [0]
         var location = 0
         while location < text.length {
@@ -182,16 +195,49 @@ final class LineNumberRulerView: NSRulerView {
             }
         }
         lineStarts = starts
+        indexedLength = text.length
+
         let digits = max(3, String(starts.count).count)
-        ruleThickness = CGFloat(digits) * 8 + 12
+        applyRuleThickness(CGFloat(digits) * 8 + 12)
+    }
+
+    /// `ruleThickness` re-tiles the enclosing scroll view, so it must never
+    /// be assigned from inside a draw or layout pass. Assigning it on the
+    /// next run-loop turn keeps that true no matter who invalidated us.
+    private func applyRuleThickness(_ desired: CGFloat) {
+        // Compare against the value already queued, not the live one — a
+        // second rebuild before the queued assignment lands must win.
+        guard abs((pendingThickness ?? ruleThickness) - desired) > 0.5 else { return }
+        pendingThickness = desired
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let pending = self.pendingThickness else { return }
+            self.pendingThickness = nil
+            if abs(self.ruleThickness - pending) > 0.5 {
+                self.ruleThickness = pending
+            }
+        }
+    }
+
+    private func scheduleRebuild() {
+        guard !rebuildScheduled else { return }
+        rebuildScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.rebuildScheduled else { return }
+            self.invalidateLineIndex()
+        }
     }
 
     override func drawHashMarksAndLabels(in rect: NSRect) {
         guard let textView, let layoutManager = textView.layoutManager,
               let container = textView.textContainer else { return }
 
-        buildLineIndexIfNeeded()
-        guard !lineStarts.isEmpty else { return }
+        // Never build the index here: it can change `ruleThickness`, and
+        // re-tiling the scroll view mid-draw re-enters AppKit layout.
+        let length = (textView.string as NSString).length
+        guard indexedLength == length, !lineStarts.isEmpty else {
+            scheduleRebuild()
+            return
+        }
 
         let visibleRect = textView.visibleRect
         let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: container)
@@ -210,10 +256,13 @@ final class LineNumberRulerView: NSRulerView {
             if lineStarts[mid] <= charRange.location { low = mid } else { high = mid - 1 }
         }
 
+        let glyphCount = layoutManager.numberOfGlyphs
         var line = low
         while line < lineStarts.count && lineStarts[line] < NSMaxRange(charRange) {
             let charIndex = lineStarts[line]
+            guard charIndex < length else { break }
             let lineGlyph = layoutManager.glyphIndexForCharacter(at: charIndex)
+            guard lineGlyph < glyphCount else { break }
             let lineRect = layoutManager.lineFragmentRect(forGlyphAt: lineGlyph, effectiveRange: nil)
             let y = lineRect.minY - visibleRect.minY + convert(NSPoint.zero, from: textView).y
 

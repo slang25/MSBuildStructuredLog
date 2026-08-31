@@ -271,35 +271,32 @@ struct TimelineScrollView: NSViewRepresentable {
         scrollView.allowsMagnification = false
         scrollView.drawsBackground = true
         scrollView.backgroundColor = .textBackgroundColor
-        scrollView.onLayout = { [weak scrollView, weak content] in
-            guard let scrollView, let content else { return }
-            context.coordinator.fitIfNeeded(scrollView: scrollView, content: content)
+        scrollView.onLayout = {
+            context.coordinator.scheduleApply()
         }
         context.coordinator.contentView = content
         context.coordinator.scrollView = scrollView
         return scrollView
     }
 
+    // updateNSView can run inside an AppKit constraint-update pass (e.g.
+    // while a split divider drags); mutating the document view there
+    // re-enters layout and has crashed AppKit. Record the desired state
+    // and apply it on a plain run-loop turn instead.
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         let coordinator = context.coordinator
-        guard let content = coordinator.contentView else { return }
-        content.onBlockClick = onBlockClick
+        coordinator.contentView?.onBlockClick = onBlockClick
         coordinator.timeline = timeline
+        coordinator.pendingFilter = filter
+        coordinator.pendingPxPerMs = pxPerMs
         coordinator.setPxPerMs = { value in DispatchQueue.main.async { pxPerMs = value } }
 
-        if content.lanes.isEmpty || content.totalDurationMs != timeline.durationMs || coordinator.lastFilter != filter {
-            coordinator.lastFilter = filter
-            content.configure(timeline: timeline, filter: filter)
+        if pxPerMs <= 0 {
+            // Fit-to-window sentinel.
+            coordinator.needsFit = true
         }
 
-        if pxPerMs <= 0 {
-            // Fit-to-window sentinel: wait for a real layout pass — the
-            // scroll view has no meaningful width during the first update.
-            coordinator.needsFit = true
-            coordinator.fitIfNeeded(scrollView: scrollView, content: content)
-        } else if abs(content.pxPerMs - CGFloat(pxPerMs)) > 0.000001 {
-            content.setZoom(CGFloat(pxPerMs))
-        }
+        coordinator.scheduleApply()
     }
 
     func makeCoordinator() -> Coordinator {
@@ -312,18 +309,47 @@ struct TimelineScrollView: NSViewRepresentable {
         weak var scrollView: NSScrollView?
         var timeline: BuildTimeline?
         var lastFilter: TracingFilter?
+        var pendingFilter: TracingFilter?
+        var pendingPxPerMs: Double?
         var needsFit = false
         var setPxPerMs: ((Double) -> Void)?
 
-        func fitIfNeeded(scrollView: NSScrollView, content: TimelineContentView) {
-            guard needsFit, let timeline else { return }
-            let visibleWidth = scrollView.contentSize.width - TimelineRender.leftPadding * 2
-            guard visibleWidth > 50 else { return }
+        private var applyScheduled = false
 
-            needsFit = false
-            let fitted = Double(visibleWidth) / max(timeline.durationMs, 1)
-            content.setZoom(CGFloat(fitted))
-            setPxPerMs?(fitted)
+        func scheduleApply() {
+            guard !applyScheduled else { return }
+            applyScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.applyScheduled = false
+                self.apply()
+            }
+        }
+
+        private func apply() {
+            guard let content = contentView, let scrollView, let timeline else { return }
+
+            if let filter = pendingFilter,
+               content.lanes.isEmpty || content.totalDurationMs != timeline.durationMs || lastFilter != filter {
+                lastFilter = filter
+                content.configure(timeline: timeline, filter: filter)
+            }
+
+            // While a divider drag is live-resizing us, hold off — the
+            // end of the resize triggers another layout report.
+            guard !scrollView.inLiveResize else { return }
+
+            if needsFit {
+                let visibleWidth = scrollView.contentSize.width - TimelineRender.leftPadding * 2
+                guard visibleWidth > 50 else { return }
+
+                needsFit = false
+                let fitted = Double(visibleWidth) / max(timeline.durationMs, 1)
+                content.setZoom(CGFloat(fitted))
+                setPxPerMs?(fitted)
+            } else if let px = pendingPxPerMs, px > 0, abs(content.pxPerMs - CGFloat(px)) > 0.000001 {
+                content.setZoom(CGFloat(px))
+            }
         }
     }
 }
@@ -331,9 +357,33 @@ struct TimelineScrollView: NSViewRepresentable {
 final class LayoutReportingScrollView: NSScrollView {
     var onLayout: (() -> Void)?
 
+    private var layoutReportScheduled = false
+
     override func layout() {
         super.layout()
-        onLayout?()
+        scheduleLayoutReport()
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        // Callers defer geometry work while inLiveResize; make sure a
+        // report lands once the divider drag / window resize finishes.
+        scheduleLayoutReport()
+    }
+
+    // Both callers resize their document view in response. Doing that
+    // while AppKit is still inside a layout pass re-enters layout — and
+    // during a split-divider drag the pass runs from the nested event
+    // loop in -[NSSplitView mouseDown:], where re-entrancy has crashed
+    // the app. Report once the pass has unwound instead.
+    private func scheduleLayoutReport() {
+        guard onLayout != nil, !layoutReportScheduled else { return }
+        layoutReportScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.layoutReportScheduled = false
+            self.onLayout?()
+        }
     }
 }
 

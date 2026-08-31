@@ -135,7 +135,7 @@ enum ProjectGraphModel {
 
         // Measure chips and compute layer widths.
         let attributes: [NSAttributedString.Key: Any] = [.font: chipFont]
-        var widths: [CGFloat] = graph.vertices.map { vertex in
+        let widths: [CGFloat] = graph.vertices.map { vertex in
             let textWidth = (vertex.title as NSString).size(withAttributes: attributes).width
             return ceil(textWidth) + chipPaddingX * 2
         }
@@ -215,6 +215,8 @@ final class ProjectGraphContentView: NSView {
     private var graph: ProjectGraph?
     private var layout: ProjectGraphModel.Layout?
     private var lastMinWidth: CGFloat = 0
+    private var pendingMinWidth: CGFloat?
+    private var relayoutScheduled = false
 
     var onSelect: ((Int?) -> Void)?
     var onDoubleClick: ((ProjectGraphVertex) -> Void)?
@@ -236,8 +238,31 @@ final class ProjectGraphContentView: NSView {
         }
     }
 
+    /// Recomputes chip layout and resizes the view — never synchronously:
+    /// callers can be inside an AppKit layout/constraint pass (split
+    /// divider drags), where resizing re-enters layout and crashes.
     func relayout(minWidth: CGFloat) {
-        guard let graph, minWidth > 50, abs(minWidth - lastMinWidth) > 1 else { return }
+        pendingMinWidth = minWidth
+        guard !relayoutScheduled else { return }
+        relayoutScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.relayoutScheduled = false
+            self.applyRelayout()
+        }
+    }
+
+    private func applyRelayout() {
+        guard let graph, let minWidth = pendingMinWidth, minWidth > 50 else { return }
+
+        // Mid-divider-drag widths churn every event; the scroll view
+        // reports layout again when the live resize ends.
+        if let scrollView = enclosingScrollView, scrollView.inLiveResize {
+            return
+        }
+
+        guard abs(minWidth - lastMinWidth) > 1 else { return }
+        pendingMinWidth = nil
         lastMinWidth = minWidth
         layout = ProjectGraphModel.layout(graph, minWidth: minWidth)
         if let layout {
