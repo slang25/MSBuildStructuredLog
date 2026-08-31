@@ -101,6 +101,15 @@ struct MainWindowView: View {
         }
         .focusedSceneValue(\.buildSession, session)
         .focusedSceneValue(\.paneSelection, $pane)
+        .task {
+            // -reveal <nodeId> launch argument (debug aid): jump straight
+            // to a node once the tree is up.
+            let arguments = ProcessInfo.processInfo.arguments
+            if let flagIndex = arguments.firstIndex(of: "-reveal"), arguments.indices.contains(flagIndex + 1) {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                session.requestReveal(nodeId: arguments[flagIndex + 1])
+            }
+        }
     }
 
     private var sidebar: some View {
