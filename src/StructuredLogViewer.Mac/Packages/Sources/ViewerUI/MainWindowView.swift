@@ -78,14 +78,26 @@ struct MainWindowView: View {
     @State private var jumpChain: [NodeSummary] = []
 
     var body: some View {
+        // Every split column is clamped to a constant flexible frame
+        // (min 0, max ∞). Without this, content whose minimum size varies
+        // with width (wrapping text, lists re-measuring) makes the column
+        // hosting view report new min/max sizes *during* a divider drag's
+        // constraint pass — NavigationSplitView then invalidates its own
+        // platform host synchronously mid-pass and AppKit aborts
+        // (SplitViewChildController.hostingView(didUpdateMinSize:maxSize:)
+        // in the crash log). Constant envelopes mean no mid-drag updates;
+        // navigationSplitViewColumnWidth still enforces sensible minimums.
         NavigationSplitView {
             sidebar
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 .navigationSplitViewColumnWidth(min: 240, ideal: 300)
         } detail: {
             detail
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         }
         .inspector(isPresented: $inspectorPresented) {
             DocumentWellView(sources: session.sources)
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 .inspectorColumnWidth(min: 300, ideal: 460)
         }
         .toolbar { toolbarContent }
