@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>mslog</AssemblyName>
+    <RootNamespace>StructuredLogViewer.NativeBridge</RootNamespace>
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- server GC measurably helps loading multi-GB binlogs (same as the viewers) -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <XmlResolverIsNetworkingEnabledByDefault>false</XmlResolverIsNetworkingEnabledByDefault>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\StructuredLogger\StructuredLogger.csproj" />
+    <ProjectReference Include="..\StructuredLogger.Utils\StructuredLogger.Utils.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared node-addressing scheme with the MCP server -->
+    <Compile Include="..\BinlogMcp\NodeId.cs" Link="NodeId.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\BinlogMcp\SearchSyntax.md">
+      <LogicalName>SearchSyntax.md</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>

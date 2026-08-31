@@ -71,10 +71,11 @@ public static class NodeId
 
     /// <summary>
     /// Resolves a node id (as produced by <see cref="Get"/>) back to a
-    /// <see cref="BaseNode"/>. Throws if the id cannot be parsed or the
-    /// referenced node does not exist.
+    /// <see cref="BaseNode"/> using a dense <see cref="TimedNode.Index"/>
+    /// lookup array. Throws if the id cannot be parsed or the referenced
+    /// node does not exist.
     /// </summary>
-    public static BaseNode Resolve(LoadedBinlog entry, string id)
+    public static BaseNode Resolve(TimedNode[] indexMap, string id)
     {
         if (string.IsNullOrWhiteSpace(id))
         {
@@ -88,7 +89,7 @@ public static class NodeId
             throw new ArgumentException($"Invalid node id: '{id}'. Expected an integer or '<int>/<ord>.<ord>...'.", nameof(id));
         }
 
-        var map = entry.IndexMap;
+        var map = indexMap;
         if ((uint)index >= (uint)map.Length || map[index] is not TimedNode anchor)
         {
             throw new KeyNotFoundException($"No TimedNode with Index {index} in this build.");

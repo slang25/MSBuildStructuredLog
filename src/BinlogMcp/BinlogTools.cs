@@ -45,7 +45,7 @@ public static partial class BinlogTools
         [Description("Node id as returned by search")] string id) => Run(() =>
     {
         var entry = Cache.Load(path);
-        var node = NodeId.Resolve(entry, id);
+        var node = NodeId.Resolve(entry.IndexMap, id);
         return DescribeNode(node);
     });
 
@@ -71,7 +71,7 @@ Returns nothing if the node has no children matching the filter.")]
         int take = Math.Clamp(maxResults ?? DefaultMaxResults, 1, MaxAllowedResults);
 
         var entry = Cache.Load(path);
-        var node = NodeId.Resolve(entry, id);
+        var node = NodeId.Resolve(entry.IndexMap, id);
 
         if (node is not TreeNode tree || !tree.HasChildren)
         {
@@ -143,7 +143,7 @@ Returns nothing if the node has no children matching the filter.")]
         [Description("Node id as returned by search")] string id) => Run(() =>
     {
         var entry = Cache.Load(path);
-        var node = NodeId.Resolve(entry, id);
+        var node = NodeId.Resolve(entry.IndexMap, id);
 
         var chain = new List<BaseNode>();
         var current = node.Parent;
@@ -190,7 +190,7 @@ When maxDepth is hit, an inline '... N more' marker shows the suppressed childre
         int depthLimit = maxDepth ?? int.MaxValue;
 
         var entry = Cache.Load(path);
-        var node = NodeId.Resolve(entry, id);
+        var node = NodeId.Resolve(entry.IndexMap, id);
 
         var sb = new StringBuilder();
         int rendered = 0;
