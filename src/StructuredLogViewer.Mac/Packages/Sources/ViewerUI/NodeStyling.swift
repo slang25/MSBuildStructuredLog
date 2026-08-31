@@ -110,24 +110,40 @@ public enum NodeStyling {
     public static let rowFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
     public static let durationFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
 
-    /// Attributed row text for a plain tree node.
+    /// Rows are one fixed-height line; attributed strings need the
+    /// truncation carried in their own paragraph style.
+    static let singleLineStyle: NSParagraphStyle = {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byTruncatingTail
+        return style
+    }()
+
+    /// Attributed row text for a plain tree node. Newlines in multi-line
+    /// message text collapse so the row stays a single line.
     public static func rowText(for summary: NodeSummary) -> NSAttributedString {
         let text = NSMutableAttributedString()
         let baseColor: NSColor = summary.isLowRelevance ? .tertiaryLabelColor : .labelColor
 
-        text.append(NSAttributedString(string: summary.title, attributes: [
+        text.append(NSAttributedString(string: singleLine(summary.title), attributes: [
             .font: rowFont,
             .foregroundColor: baseColor,
+            .paragraphStyle: singleLineStyle,
         ]))
 
         if let duration = summary.durationMs, duration > 0 {
             text.append(NSAttributedString(string: "  " + formatDuration(milliseconds: duration), attributes: [
                 .font: durationFont,
                 .foregroundColor: NSColor.secondaryLabelColor,
+                .paragraphStyle: singleLineStyle,
             ]))
         }
 
         return text
+    }
+
+    static func singleLine(_ text: String) -> String {
+        guard text.contains(where: \.isNewline) else { return text }
+        return text.split(whereSeparator: \.isNewline).joined(separator: " ⏎ ")
     }
 
     /// Attributed row text for a search result with bold, tinted highlight
@@ -138,19 +154,22 @@ public enum NodeStyling {
 
         for span in highlights {
             if span.style == "time" {
-                text.append(NSAttributedString(string: span.text, attributes: [
+                text.append(NSAttributedString(string: singleLine(span.text), attributes: [
                     .font: durationFont,
                     .foregroundColor: NSColor.secondaryLabelColor,
+                    .paragraphStyle: singleLineStyle,
                 ]))
             } else if span.isHighlight == true {
-                text.append(NSAttributedString(string: span.text, attributes: [
+                text.append(NSAttributedString(string: singleLine(span.text), attributes: [
                     .font: NSFont.boldSystemFont(ofSize: NSFont.smallSystemFontSize),
                     .foregroundColor: NSColor.controlAccentColor,
+                    .paragraphStyle: singleLineStyle,
                 ]))
             } else {
-                text.append(NSAttributedString(string: span.text, attributes: [
+                text.append(NSAttributedString(string: singleLine(span.text), attributes: [
                     .font: rowFont,
                     .foregroundColor: baseColor,
+                    .paragraphStyle: singleLineStyle,
                 ]))
             }
         }

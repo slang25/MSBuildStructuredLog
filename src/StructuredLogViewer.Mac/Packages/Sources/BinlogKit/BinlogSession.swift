@@ -188,13 +188,26 @@ public final class BinlogSession: BinlogEngine, @unchecked Sendable {
 
     private final class ProgressBox {
         private let handler: @Sendable (Double) -> Void
+        private let lastReported = OSAllocatedUnfairLockBox(-1.0)
 
         init(_ handler: @escaping @Sendable (Double) -> Void) {
             self.handler = handler
         }
 
         func report(_ ratio: Double) {
-            handler(ratio)
+            // The reader fires per buffer; throttle to meaningful steps so
+            // the UI isn't flooded with main-actor hops during huge loads.
+            let shouldReport = lastReported.withLock { last -> Bool in
+                if ratio >= 1.0 || ratio - last >= 0.005 {
+                    last = ratio
+                    return true
+                }
+                return false
+            }
+
+            if shouldReport {
+                handler(ratio)
+            }
         }
     }
 

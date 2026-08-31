@@ -141,7 +141,7 @@ extension OutlineController: NSOutlineViewDelegate {
         cell.imageView?.image = image
         cell.textField?.attributedStringValue = NodeStyling.rowText(for: summary)
         cell.textField?.lineBreakMode = .byTruncatingTail
-        cell.toolTip = summary.title.count > 120 ? summary.title : nil
+        cell.toolTip = summary.title.count > 120 || summary.title.contains("\n") ? summary.title : nil
         return cell
     }
 
@@ -173,6 +173,8 @@ enum NodeCellView {
         let textField = NSTextField(labelWithString: "")
         textField.translatesAutoresizingMaskIntoConstraints = false
         textField.lineBreakMode = .byTruncatingTail
+        textField.maximumNumberOfLines = 1
+        textField.cell?.truncatesLastVisibleLine = true
         textField.allowsDefaultTighteningForTruncation = false
         cell.textField = textField
         cell.addSubview(textField)

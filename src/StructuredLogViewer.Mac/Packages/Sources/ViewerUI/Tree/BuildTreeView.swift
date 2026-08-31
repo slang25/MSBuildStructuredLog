@@ -39,7 +39,9 @@ public struct NodeMenuActions {
             menu.addItem(makeItem("Preprocess") { preprocess(summary) })
         }
 
-        if let searchInSubtree, summary.hasChildren {
+        // The search DSL addresses nodes as $<index>, which only exists for
+        // timed nodes (plain numeric ids, no '/' path form).
+        if let searchInSubtree, summary.hasChildren, !summary.id.contains("/") {
             menu.addItem(.separator())
             menu.addItem(makeItem("Search in Subtree") { searchInSubtree(summary) })
         }
