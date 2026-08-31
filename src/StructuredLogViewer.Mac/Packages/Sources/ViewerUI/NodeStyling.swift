@@ -40,9 +40,9 @@ public enum NodeStyling {
         case .parameter:
             return Style(symbolName: "arrow.right.square", color: .systemBlue)
         case .folder:
-            return Style(symbolName: "folder.fill", color: NSColor(named: "folderTint") ?? .systemYellow)
+            return Style(symbolName: "folder.fill", color: .systemYellow)
         case .message, .timedMessage:
-            return Style(symbolName: "text.bubble", color: .tertiaryLabelColor)
+            return Style(symbolName: "text.bubble", color: .secondaryLabelColor)
         case .criticalBuildMessage:
             return Style(symbolName: "exclamationmark.bubble", color: .systemOrange)
         case .error:
@@ -50,7 +50,7 @@ public enum NodeStyling {
         case .warning:
             return Style(symbolName: "exclamationmark.triangle.fill", color: .systemYellow)
         case .note:
-            return Style(symbolName: "note.text", color: .tertiaryLabelColor)
+            return Style(symbolName: "note.text", color: .secondaryLabelColor)
         case .importNode:
             return Style(symbolName: "arrow.down.doc.fill", color: .systemBrown)
         case .noImport:
@@ -64,13 +64,13 @@ public enum NodeStyling {
         case .sourceFile:
             return Style(symbolName: "doc.text", color: .systemBlue)
         case .sourceFileLine:
-            return Style(symbolName: "text.alignleft", color: .tertiaryLabelColor)
+            return Style(symbolName: "text.alignleft", color: .secondaryLabelColor)
         case .evaluationProfileEntry, .timedNode:
-            return Style(symbolName: "clock", color: .tertiaryLabelColor)
+            return Style(symbolName: "clock", color: .secondaryLabelColor)
         case .msBuildServerNode:
             return Style(symbolName: "server.rack", color: .systemIndigo)
         case .proxy, .unknown:
-            return Style(symbolName: "folder", color: .tertiaryLabelColor)
+            return Style(symbolName: "folder", color: .secondaryLabelColor)
         }
     }
 

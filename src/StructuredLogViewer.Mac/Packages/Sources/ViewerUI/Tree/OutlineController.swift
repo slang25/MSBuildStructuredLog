@@ -136,7 +136,9 @@ extension OutlineController: NSOutlineViewDelegate {
 
         let summary = node.summary
         let style = NodeStyling.style(for: summary)
-        let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: NodeStyling.rowFontSize, weight: .regular)
+        // Medium weight keeps outline-style glyphs (bubbles, tags, clocks)
+        // legible at this size, especially in dark mode.
+        let symbolConfiguration = NSImage.SymbolConfiguration(pointSize: NodeStyling.rowFontSize, weight: .medium)
             .applying(.init(paletteColors: [NodeStyling.stateAccent(for: summary) ?? style.color]))
         let image = NSImage(systemSymbolName: style.symbolName, accessibilityDescription: summary.kind)?
             .withSymbolConfiguration(symbolConfiguration)
