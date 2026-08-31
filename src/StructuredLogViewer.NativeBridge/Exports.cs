@@ -230,7 +230,13 @@ public static unsafe class Exports
             int end = Math.Min(total, skip + take);
             for (int i = skip; i < end; i++)
             {
-                page.Children.Add(NodeFormatter.CreateSummary(session, children[i]));
+                var summary = NodeFormatter.CreateSummary(session, children[i]);
+                if (sortMode == 0)
+                {
+                    summary.ChildIndex = i;
+                }
+
+                page.Children.Add(summary);
             }
 
             page.Count = page.Children.Count;
@@ -253,11 +259,24 @@ public static unsafe class Exports
             var session = lease.Session;
             var node = session.ResolveNode(NativeStrings.FromNative(nodeId));
 
+            // Chain includes the node itself; each entry (except the root)
+            // carries its index within its parent so a UI can expand
+            // top-down and jump straight to the right row.
             var chain = new System.Collections.Generic.List<NodeSummaryDto>();
-            var current = node.Parent;
+            BaseNode current = node;
             while (current != null)
             {
-                chain.Add(NodeFormatter.CreateSummary(session, current));
+                var summary = NodeFormatter.CreateSummary(session, current);
+                if (current.Parent is TreeNode parent)
+                {
+                    int index = parent.Children.IndexOf(current);
+                    if (index >= 0)
+                    {
+                        summary.ChildIndex = index;
+                    }
+                }
+
+                chain.Add(summary);
                 current = current.Parent;
             }
 

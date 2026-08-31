@@ -118,7 +118,8 @@ int32_t mslog_node_children(int64_t handle,
                             char **out_json,
                             char **error_json);
 
-/* Ancestors JSON: {chain: [NodeSummary]} — root first, parent last. */
+/* Ancestors JSON: {chain: [NodeSummary]} — root first, the requested node
+ * itself last; entries carry childIndex (position in their parent). */
 int32_t mslog_node_ancestors(int64_t handle,
                              const char *node_id,
                              char **out_json,

@@ -18,12 +18,17 @@ internal static class NodeFormatter
 
     public static NodeSummaryDto CreateSummary(BridgeSession session, BaseNode node)
     {
+        // GetNodeText yields "Build Build" for the root (TypeName + Name);
+        // show the viewer-style success line instead.
+        string title = node is Build build
+            ? (build.Succeeded ? "Build succeeded" : "Build failed")
+            : ProxyNode.GetNodeText(node) ?? node.Title ?? string.Empty;
+
         var dto = new NodeSummaryDto
         {
             Id = BinlogMcp.NodeId.Get(node),
             Kind = node.TypeName ?? node.GetType().Name,
-            Title = TextUtilities.ShortenValue(
-                ProxyNode.GetNodeText(node) ?? node.Title ?? string.Empty, "...", MaxTitleChars),
+            Title = TextUtilities.ShortenValue(title, "...", MaxTitleChars),
             State = GetState(node)
         };
 

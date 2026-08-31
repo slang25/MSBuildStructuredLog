@@ -29,6 +29,12 @@ public sealed class NodeSummaryDto
     public bool HasSource { get; set; }
     public bool CanPreprocess { get; set; }
 
+    /// <summary>
+    /// Index of this node in its parent's natural child order, when cheaply
+    /// known (children pages and ancestor chains); null otherwise.
+    /// </summary>
+    public int? ChildIndex { get; set; }
+
     /// <summary>Small kind-specific extras (fromAssembly, line, version, ...).</summary>
     public Dictionary<string, string> Props { get; set; }
 }
@@ -56,7 +62,10 @@ public sealed class ChildrenPageDto
 
 public sealed class AncestorsDto
 {
-    /// <summary>Root first, immediate parent last.</summary>
+    /// <summary>
+    /// Root first, the requested node itself last. Every entry carries
+    /// childIndex (its position in its parent) except the root.
+    /// </summary>
     public List<NodeSummaryDto> Chain { get; set; }
 }
 
