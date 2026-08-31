@@ -52,6 +52,10 @@ swift test           # ViewerCore unit tests (paging, debounce, reveal)
 
 ## Design notes / deviations from the original plan
 
+- **AppKit split view.** NavigationSplitView + `.inspector` crash on
+  macOS 26 when dividers drag (SwiftUI invalidates its split platform
+  host inside AppKit's constraint pass); `TriSplitView` wraps a plain
+  NSSplitViewController with `sizingOptions = []` hosting controllers.
 - **Windows, not DocumentGroup.** SwiftUI documents read files through
   `FileWrapper`, which risks eagerly loading multi-GB binlogs. The app
   uses `WindowGroup(for: URL.self)` plus `NSDocumentController` for
