@@ -35,6 +35,15 @@ public protocol BinlogEngine: AnyObject, Sendable {
     func search(query: String, maxResults: Int) async throws -> SearchResponse
     func searchPropertiesAndItems(contextId: String, query: String, maxResults: Int) async throws -> SearchResponse
 
+    /// File-scoped semantics for an open source file: the evaluations it
+    /// participated in plus its import edges and target definitions. Pass a
+    /// nil evaluation to take the default context.
+    func semanticFile(path: String, evaluationId: String?) async throws -> SemanticFile
+
+    /// Resolves one `$(property)`, `@(item)` or target name within an
+    /// evaluation. Unknown names come back with `found == false`, not an error.
+    func semanticResolve(evaluationId: String, kind: SemanticSymbolKind, name: String) async throws -> SemanticSymbol
+
     func listFiles() async throws -> FileList
     func readFile(path: String) async throws -> String
     func searchFiles(term: String, maxResults: Int) async throws -> FileSearchResponse

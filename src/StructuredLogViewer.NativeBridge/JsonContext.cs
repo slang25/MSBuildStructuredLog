@@ -18,6 +18,8 @@ namespace StructuredLogViewer.NativeBridge;
 [JsonSerializable(typeof(StatsDto))]
 [JsonSerializable(typeof(TimelineDto))]
 [JsonSerializable(typeof(ProjectGraphDto))]
+[JsonSerializable(typeof(SemanticFileDto))]
+[JsonSerializable(typeof(SemanticSymbolDto))]
 [JsonSerializable(typeof(ErrorDto))]
 public partial class BridgeJsonContext : JsonSerializerContext
 {

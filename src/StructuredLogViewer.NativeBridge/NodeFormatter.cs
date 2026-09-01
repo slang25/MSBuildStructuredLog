@@ -19,10 +19,14 @@ internal static class NodeFormatter
     public static NodeSummaryDto CreateSummary(BridgeSession session, BaseNode node)
     {
         // GetNodeText yields "Build Build" for the root (TypeName + Name);
-        // show the viewer-style success line instead.
-        string title = node is Build build
-            ? (build.Succeeded ? "Build succeeded" : "Build failed")
-            : ProxyNode.GetNodeText(node) ?? node.Title ?? string.Empty;
+        // show the viewer-style success line instead. Package rows drop the
+        // type prefix too and carry the version, like the viewer template.
+        string title = node switch
+        {
+            Build build => build.Succeeded ? "Build succeeded" : "Build failed",
+            Package package => package.ToString(),
+            _ => ProxyNode.GetNodeText(node) ?? node.Title ?? string.Empty
+        };
 
         var dto = new NodeSummaryDto
         {

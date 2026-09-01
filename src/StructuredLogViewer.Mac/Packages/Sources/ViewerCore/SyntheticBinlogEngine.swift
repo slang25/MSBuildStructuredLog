@@ -120,6 +120,18 @@ open class SyntheticBinlogEngine: BinlogEngine, @unchecked Sendable {
         try await search(query: query, maxResults: maxResults)
     }
 
+    open func semanticFile(path: String, evaluationId: String?) async throws -> SemanticFile {
+        SemanticFile(path: path, contextsTotal: 0)
+    }
+
+    open func semanticResolve(
+        evaluationId: String,
+        kind: SemanticSymbolKind,
+        name: String
+    ) async throws -> SemanticSymbol {
+        SemanticSymbol(kind: kind, name: name, found: false)
+    }
+
     open func listFiles() async throws -> FileList { FileList(total: 0, files: []) }
 
     open func readFile(path: String) async throws -> String {

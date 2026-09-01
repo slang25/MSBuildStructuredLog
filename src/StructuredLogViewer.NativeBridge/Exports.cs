@@ -419,6 +419,62 @@ public static unsafe class Exports
         }
     }
 
+    // ----- semantics -----
+
+    [UnmanagedCallersOnly(EntryPoint = "mslog_semantic_file")]
+    public static int MslogSemanticFile(
+        long handle,
+        IntPtr path,
+        IntPtr evaluationId,
+        IntPtr* outJson,
+        IntPtr* errorJson)
+    {
+        Clear(outJson);
+        Clear(errorJson);
+        try
+        {
+            using var lease = SessionTable.Rent(handle);
+            var dto = SemanticFormatter.CreateFile(
+                lease.Session,
+                NativeStrings.FromNative(path),
+                NativeStrings.FromNative(evaluationId));
+
+            return Ok(outJson, JsonSerializer.Serialize(dto, BridgeJsonContext.Default.SemanticFileDto));
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex, errorJson);
+        }
+    }
+
+    [UnmanagedCallersOnly(EntryPoint = "mslog_semantic_resolve")]
+    public static int MslogSemanticResolve(
+        long handle,
+        IntPtr evaluationId,
+        IntPtr kind,
+        IntPtr name,
+        IntPtr* outJson,
+        IntPtr* errorJson)
+    {
+        Clear(outJson);
+        Clear(errorJson);
+        try
+        {
+            using var lease = SessionTable.Rent(handle);
+            var dto = SemanticFormatter.Resolve(
+                lease.Session,
+                NativeStrings.FromNative(evaluationId),
+                NativeStrings.FromNative(kind),
+                NativeStrings.FromNative(name));
+
+            return Ok(outJson, JsonSerializer.Serialize(dto, BridgeJsonContext.Default.SemanticSymbolDto));
+        }
+        catch (Exception ex)
+        {
+            return Fail(ex, errorJson);
+        }
+    }
+
     // ----- search -----
 
     [UnmanagedCallersOnly(EntryPoint = "mslog_search")]

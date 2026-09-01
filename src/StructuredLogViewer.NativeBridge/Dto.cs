@@ -264,3 +264,100 @@ public sealed class ErrorDto
     public string Code { get; set; }
     public string Message { get; set; }
 }
+
+// ----- semantics (Cmd-click / quick info over MSBuild source) -----
+
+/// <summary>
+/// One evaluation a source file participated in. Semantic answers are
+/// meaningless without one: the same .props file is imported by many
+/// projects and resolves differently in each.
+/// </summary>
+public sealed class SemanticContextDto
+{
+    /// <summary>Node id of the ProjectEvaluation; also revealable in the tree.</summary>
+    public string EvaluationId { get; set; }
+
+    public string ProjectFile { get; set; }
+
+    /// <summary>File name plus dimensions, e.g. "Foo.csproj (net8.0, Debug)".</summary>
+    public string Label { get; set; }
+
+    /// <summary>True when the viewed file *is* this evaluation's project file.</summary>
+    public bool IsProjectFile { get; set; }
+}
+
+public sealed class SemanticImportDto
+{
+    /// <summary>1-based location of the Import element in the viewed file.</summary>
+    public int Line { get; set; }
+
+    public int Column { get; set; }
+    public string ImportedPath { get; set; }
+
+    /// <summary>False when the imported file can't be opened (not archived).</summary>
+    public bool Available { get; set; }
+}
+
+public sealed class SemanticTargetDefinitionDto
+{
+    public string Name { get; set; }
+
+    /// <summary>1-based.</summary>
+    public int Line { get; set; }
+}
+
+public sealed class SemanticFileDto
+{
+    public string Path { get; set; }
+
+    /// <summary>The context these imports/targets were resolved under.</summary>
+    public string EvaluationId { get; set; }
+
+    public List<SemanticContextDto> Contexts { get; set; }
+
+    /// <summary>Contexts before truncation; more than Contexts.Count means the list was capped.</summary>
+    public int ContextsTotal { get; set; }
+
+    public List<SemanticImportDto> Imports { get; set; }
+    public List<SemanticTargetDefinitionDto> Targets { get; set; }
+}
+
+public sealed class SemanticLocationDto
+{
+    public string Path { get; set; }
+    public int Line { get; set; }
+    public string Label { get; set; }
+    public string Detail { get; set; }
+
+    /// <summary>Node to reveal in the build tree, when this location has one.</summary>
+    public string NodeId { get; set; }
+
+    /// <summary>False when Path can't be opened (not archived, not on disk).</summary>
+    public bool Available { get; set; }
+}
+
+public sealed class SemanticFactDto
+{
+    public string Label { get; set; }
+    public string Value { get; set; }
+}
+
+public sealed class SemanticSymbolDto
+{
+    /// <summary>property | item | target</summary>
+    public string Kind { get; set; }
+
+    public string Name { get; set; }
+    public bool Found { get; set; }
+    public string Value { get; set; }
+
+    /// <summary>Caveat to show under the value (e.g. property tracking was off).</summary>
+    public string Note { get; set; }
+
+    public List<SemanticLocationDto> Definitions { get; set; }
+
+    /// <summary>Where a target actually ran; empty for properties and items.</summary>
+    public List<SemanticLocationDto> Executions { get; set; }
+
+    public List<SemanticFactDto> Facts { get; set; }
+}

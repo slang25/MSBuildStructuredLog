@@ -116,6 +116,9 @@ public final class BuildSession {
 
         findInFiles.engine = engine
         sources.engine = engine
+        sources.onReveal = { [weak self] nodeId in
+            self?.requestReveal(nodeId: nodeId)
+        }
         phase = .loaded
     }
 

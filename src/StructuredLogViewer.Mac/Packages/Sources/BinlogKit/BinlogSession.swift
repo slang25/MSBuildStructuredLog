@@ -159,6 +159,25 @@ public final class BinlogSession: BinlogEngine, @unchecked Sendable {
         }
     }
 
+    public func semanticFile(path: String, evaluationId: String?) async throws -> SemanticFile {
+        try await call(SemanticFile.self) { handle, json, err in
+            if let evaluationId {
+                return mslog_semantic_file(handle, path, evaluationId, json, err)
+            }
+            return mslog_semantic_file(handle, path, nil, json, err)
+        }
+    }
+
+    public func semanticResolve(
+        evaluationId: String,
+        kind: SemanticSymbolKind,
+        name: String
+    ) async throws -> SemanticSymbol {
+        try await call(SemanticSymbol.self) { handle, json, err in
+            mslog_semantic_resolve(handle, evaluationId, kind.rawValue, name, json, err)
+        }
+    }
+
     public func listFiles() async throws -> FileList {
         try await call(FileList.self) { handle, json, err in
             mslog_files_list(handle, json, err)

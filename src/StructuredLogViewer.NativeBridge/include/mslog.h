@@ -155,6 +155,44 @@ int32_t mslog_target_parent(int64_t handle,
                             char **out_json,
                             char **error_json);
 
+/* --- semantics ---------------------------------------------------------- */
+
+/* SemanticFile JSON: {path, evaluationId, contextsTotal, contexts:
+ * [{evaluationId, projectFile, label, isProjectFile}], imports: [{line,
+ * column, importedPath, available}], targets: [{name, line}]}.
+ *
+ * MSBuild source files are not self-contained: the same Directory.Build.props
+ * is imported by many projects and resolves differently in each, so every
+ * semantic answer is scoped to one ProjectEvaluation. `contexts` lists the
+ * evaluations this file participated in (capped; compare with contextsTotal),
+ * addressed by the same node ids used everywhere else. Pass evaluation_id
+ * NULL to take the default context (the project itself, else the first
+ * evaluation that imported the file); the chosen one comes back as
+ * `evaluationId`. `imports` and `targets` are 1-based source locations in
+ * this file, ready to turn into Cmd-click targets. */
+int32_t mslog_semantic_file(int64_t handle,
+                            const char *path,
+                            const char *evaluation_id,
+                            char **out_json,
+                            char **error_json);
+
+/* SemanticSymbol JSON: {kind, name, found, value, note, definitions:
+ * [Location], executions: [Location], facts: [{label, value}]}, where
+ * Location is {path, line, label, detail, nodeId, available}.
+ *
+ * Resolves one `$(property)`, `@(item)` or target name within an evaluation.
+ * kind is "property" | "item" | "target". `found` is false (not an error)
+ * when the evaluation has no such symbol. `definitions` are jump targets;
+ * `executions` (targets only) are build-tree nodes to reveal. `note` carries
+ * caveats worth showing, e.g. that assignment locations are unavailable
+ * because the build ran without property tracking. */
+int32_t mslog_semantic_resolve(int64_t handle,
+                               const char *evaluation_id,
+                               const char *kind,
+                               const char *name,
+                               char **out_json,
+                               char **error_json);
+
 /* --- search ------------------------------------------------------------- */
 
 /* SearchResponse JSON: {query, resultCount, overflow, elapsedMs, roots:

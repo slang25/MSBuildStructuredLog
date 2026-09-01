@@ -2,7 +2,8 @@ import SwiftUI
 import ViewerCore
 
 /// The trailing inspector's document well: closable tabs of open source
-/// files / preprocessed XML over the editor.
+/// files / preprocessed XML over the editor, plus the evaluation-context
+/// picker that scopes the semantic layer.
 struct DocumentWellView: View {
     @Bindable var sources: SourceController
 
@@ -17,7 +18,8 @@ struct DocumentWellView: View {
                 tabBar
                 Divider()
                 if let tab = sources.selectedTab {
-                    SourceEditorView(tab: tab)
+                    contextBar(for: tab)
+                    SourceEditorView(tab: tab, sources: sources)
                         .id(tab.id)
                 }
             }
@@ -70,5 +72,77 @@ struct DocumentWellView: View {
             .padding(.vertical, 3)
         }
         .background(.bar)
+    }
+
+    /// A build file means something different in every project that imports
+    /// it, so the semantic layer is scoped to one evaluation — and that
+    /// choice belongs on screen, not buried in a preference.
+    @ViewBuilder
+    private func contextBar(for tab: SourceTab) -> some View {
+        if !tab.contexts.isEmpty {
+            HStack(spacing: 6) {
+                Menu {
+                    ForEach(tab.contexts) { context in
+                        Button {
+                            sources.selectContext(tabId: tab.id, evaluationId: context.evaluationId)
+                        } label: {
+                            if context.evaluationId == tab.evaluationId {
+                                Label(context.label, systemImage: "checkmark")
+                            } else {
+                                Text(context.label)
+                            }
+                        }
+                    }
+
+                    if tab.contextsTotal > tab.contexts.count {
+                        Divider()
+                        Text("Showing \(tab.contexts.count) of \(tab.contextsTotal)")
+                    }
+
+                    if let evaluationId = tab.evaluationId {
+                        Divider()
+                        Button("Reveal Evaluation in Tree") {
+                            sources.revealContext(evaluationId)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "scope")
+                            .font(.system(size: 9))
+                        Text(tab.selectedContext?.label ?? "Choose an evaluation")
+                            .font(.caption)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(contextHelp(for: tab))
+
+                if tab.contextsTotal > 1 {
+                    Text("\(tab.contextsTotal)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .help("\(tab.contextsTotal) evaluations included this file")
+                        .layoutPriority(1)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(.bar)
+
+            Divider()
+        }
+    }
+
+    private func contextHelp(for tab: SourceTab) -> String {
+        var lines = ["Evaluated as part of this project — $(properties), targets and imports resolve in its context."]
+        if let context = tab.selectedContext {
+            lines.append(context.label)
+            if let projectFile = context.projectFile {
+                lines.append(projectFile)
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 }

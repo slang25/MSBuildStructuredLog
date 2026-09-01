@@ -20,6 +20,20 @@ public struct SourceTab: Identifiable, Equatable {
     public var gotoLine: Int?
     public var gotoToken: Int = 0
 
+    /// The evaluation this tab's semantics are resolved under. One tab per
+    /// path; the context is switchable, because the same .props file means
+    /// something different in every project that imports it.
+    public var evaluationId: String?
+
+    /// Evaluations offered in the context picker (may be a capped subset of
+    /// `contextsTotal`).
+    public var contexts: [SemanticContext] = []
+    public var contextsTotal: Int = 0
+
+    /// Navigable spans joined to the build's import edges; nil until the
+    /// engine answers (or when this tab isn't MSBuild XML).
+    public var semantics: SourceSemanticIndex?
+
     public init(id: String, kind: Kind, title: String, path: String, content: String, gotoLine: Int? = nil) {
         self.id = id
         self.kind = kind
@@ -27,6 +41,49 @@ public struct SourceTab: Identifiable, Equatable {
         self.path = path
         self.content = content
         self.gotoLine = gotoLine
+    }
+
+    public var selectedContext: SemanticContext? {
+        contexts.first { $0.evaluationId == evaluationId }
+    }
+
+    /// Whether this tab's text is worth running the MSBuild tokenizer over.
+    /// Preprocessed output is excluded: its imports are inlined, so line
+    /// numbers no longer line up with the build's import edges.
+    public var isSemanticCandidate: Bool {
+        guard kind == .file else { return false }
+        let lowered = path.lowercased()
+        for suffix in Self.msbuildExtensions where lowered.hasSuffix(suffix) {
+            return true
+        }
+        return content.hasPrefix("<Project")
+    }
+
+    private static let msbuildExtensions = [
+        ".csproj", ".vbproj", ".fsproj", ".vcxproj", ".esproj", ".shproj",
+        ".props", ".targets", ".proj", ".tasks", ".overridetasks", ".pubxml",
+    ]
+}
+
+/// What the quick-info popover renders for the token under the pointer.
+public struct SemanticQuickInfo: Sendable, Equatable {
+    public enum Body: Sendable, Equatable {
+        case symbol(SemanticSymbol)
+        case imports([SemanticLocation])
+        case unavailable(String)
+    }
+
+    /// The token as written, e.g. `$(OutputPath)` or `<Target Name="Build">`.
+    public var title: String
+    public var body: Body
+
+    /// The evaluation the answer is scoped to, for the popover footer.
+    public var contextLabel: String?
+
+    public init(title: String, body: Body, contextLabel: String? = nil) {
+        self.title = title
+        self.body = body
+        self.contextLabel = contextLabel
     }
 }
 
@@ -45,9 +102,18 @@ public final class SourceController {
 
     public weak var engine: (any BinlogEngine)?
 
+    /// Asks the main tree to reveal a node — wired to `BuildSession`.
+    public var onReveal: ((String) -> Void)?
+
+    private var semanticTasks: [String: Task<Void, Never>] = [:]
+
     public init() {}
 
     public func reset() {
+        for task in semanticTasks.values {
+            task.cancel()
+        }
+        semanticTasks = [:]
         tabs = []
         selectedTabId = nil
         errorMessage = nil
@@ -81,7 +147,10 @@ public final class SourceController {
         }
     }
 
-    public func openFile(path: String, line: Int? = nil) {
+    /// - Parameter preferredEvaluationId: carried across a Cmd-click so that
+    ///   following an import keeps the evaluation you were reading in; the
+    ///   engine falls back to the file's own default if it doesn't apply.
+    public func openFile(path: String, line: Int? = nil, preferredEvaluationId: String? = nil) {
         guard let engine else { return }
         Task { [weak self] in
             do {
@@ -91,7 +160,8 @@ public final class SourceController {
                     title: (path as NSString).lastPathComponent,
                     path: path,
                     content: text,
-                    line: line)
+                    line: line,
+                    preferredEvaluationId: preferredEvaluationId)
             } catch {
                 self?.errorMessage = (error as? EngineError)?.message ?? error.localizedDescription
             }
@@ -117,21 +187,37 @@ public final class SourceController {
         }
     }
 
-    public func open(kind: SourceTab.Kind, title: String, path: String, content: String, line: Int?) {
+    public func open(
+        kind: SourceTab.Kind,
+        title: String,
+        path: String,
+        content: String,
+        line: Int?,
+        preferredEvaluationId: String? = nil
+    ) {
         let id = "\(kind):\(path)"
+        var isNew = false
         if let index = tabs.firstIndex(where: { $0.id == id }) {
             tabs[index].content = content
             tabs[index].gotoLine = line
             tabs[index].gotoToken += 1
         } else {
+            isNew = true
             tabs.append(SourceTab(id: id, kind: kind, title: title, path: path, content: content, gotoLine: line))
         }
         selectedTabId = id
         presentationToken += 1
+
+        // Re-index only on first open: the same file re-opened at a different
+        // line keeps whatever context the user chose.
+        if isNew, tabs.last?.isSemanticCandidate == true {
+            loadSemantics(tabId: id, evaluationId: preferredEvaluationId)
+        }
     }
 
     public func close(tabId: String) {
         guard let index = tabs.firstIndex(where: { $0.id == tabId }) else { return }
+        semanticTasks.removeValue(forKey: tabId)?.cancel()
         tabs.remove(at: index)
         if selectedTabId == tabId {
             selectedTabId = tabs.indices.contains(index) ? tabs[index].id : tabs.last?.id
@@ -140,5 +226,175 @@ public final class SourceController {
 
     public func clearError() {
         errorMessage = nil
+    }
+
+    // MARK: - semantics
+
+    /// Re-resolves a tab under a different evaluation. Import edges are
+    /// evaluation-scoped, so the whole index is rebuilt.
+    public func selectContext(tabId: String, evaluationId: String) {
+        guard let index = tabs.firstIndex(where: { $0.id == tabId }),
+              tabs[index].evaluationId != evaluationId else { return }
+        tabs[index].evaluationId = evaluationId
+        loadSemantics(tabId: tabId, evaluationId: evaluationId)
+    }
+
+    /// Jumps the build tree to the evaluation a tab is scoped to.
+    public func revealContext(_ evaluationId: String) {
+        onReveal?(evaluationId)
+    }
+
+    private func loadSemantics(tabId: String, evaluationId: String?) {
+        guard let engine, let tab = tabs.first(where: { $0.id == tabId }) else { return }
+
+        semanticTasks[tabId]?.cancel()
+        let path = tab.path
+        let content = tab.content
+
+        semanticTasks[tabId] = Task { [weak self] in
+            do {
+                let file = try await engine.semanticFile(path: path, evaluationId: evaluationId)
+                try Task.checkCancellation()
+
+                // Multi-MB build files: tokenize off the main actor.
+                let index = await Task.detached(priority: .userInitiated) {
+                    SourceSemanticIndex(text: content, file: file)
+                }.value
+                try Task.checkCancellation()
+
+                self?.apply(index: index, to: tabId)
+            } catch is CancellationError {
+            } catch EngineError.cancelled {
+            } catch {
+                // Semantics are an enhancement — a file that can't be indexed
+                // still reads fine, so this must never raise an alert.
+            }
+        }
+    }
+
+    private func apply(index: SourceSemanticIndex, to tabId: String) {
+        guard let position = tabs.firstIndex(where: { $0.id == tabId }) else { return }
+        tabs[position].semantics = index
+        tabs[position].evaluationId = index.file.evaluationId
+        tabs[position].contexts = index.file.contexts ?? []
+        tabs[position].contextsTotal = index.file.contextsTotal ?? tabs[position].contexts.count
+    }
+
+    // MARK: - navigation and quick info
+
+    /// Resolves the token under the pointer for the quick-info popover.
+    public func quickInfo(for token: MSBuildToken, in tabId: String) async -> SemanticQuickInfo? {
+        guard let tab = tabs.first(where: { $0.id == tabId }), let index = tab.semantics else { return nil }
+        let contextLabel = tab.selectedContext?.label
+        let title = Self.title(for: token)
+
+        guard let kind = index.symbolKind(for: token) else {
+            switch index.importNavigation(for: token) {
+            case .open(let location):
+                return SemanticQuickInfo(title: title, body: .imports([location]), contextLabel: contextLabel)
+            case .choose(let locations):
+                return SemanticQuickInfo(title: title, body: .imports(locations), contextLabel: contextLabel)
+            case .none(let reason):
+                return SemanticQuickInfo(title: title, body: .unavailable(reason), contextLabel: contextLabel)
+            }
+        }
+
+        guard let engine, let evaluationId = tab.evaluationId else {
+            return SemanticQuickInfo(
+                title: title,
+                body: .unavailable("No evaluation context for this file."),
+                contextLabel: contextLabel)
+        }
+
+        do {
+            let symbol = try await engine.semanticResolve(
+                evaluationId: evaluationId, kind: kind, name: token.name)
+            return SemanticQuickInfo(title: title, body: .symbol(symbol), contextLabel: contextLabel)
+        } catch {
+            return SemanticQuickInfo(
+                title: title,
+                body: .unavailable((error as? EngineError)?.message ?? error.localizedDescription),
+                contextLabel: contextLabel)
+        }
+    }
+
+    /// Cmd-click. Single destination jumps; several offer a picker via
+    /// `onChoice`; nothing navigable reports why.
+    public func navigate(
+        token: MSBuildToken,
+        in tabId: String,
+        onChoice: @escaping ([SemanticLocation]) -> Void
+    ) {
+        guard let tab = tabs.first(where: { $0.id == tabId }), let index = tab.semantics else { return }
+
+        guard let kind = index.symbolKind(for: token) else {
+            handle(index.importNavigation(for: token), from: tab, onChoice: onChoice)
+            return
+        }
+
+        guard let engine, let evaluationId = tab.evaluationId else { return }
+
+        // Cmd-clicking a target's own <Target Name="..."> should go to where
+        // it ran, not to the line already under the pointer.
+        let preference: SourceSemanticIndex.NavigationPreference =
+            token.kind == .targetDefinition ? .executions : .definitions
+
+        Task { [weak self] in
+            do {
+                let symbol = try await engine.semanticResolve(
+                    evaluationId: evaluationId, kind: kind, name: token.name)
+                self?.handle(
+                    SourceSemanticIndex.navigation(for: symbol, preferring: preference),
+                    from: tab,
+                    onChoice: onChoice)
+            } catch {
+                self?.errorMessage = (error as? EngineError)?.message ?? error.localizedDescription
+            }
+        }
+    }
+
+    private func handle(
+        _ navigation: SemanticNavigation,
+        from tab: SourceTab,
+        onChoice: ([SemanticLocation]) -> Void
+    ) {
+        switch navigation {
+        case .open(let location):
+            go(to: location, from: tab)
+        case .choose(let locations):
+            onChoice(locations)
+        case .none(let reason):
+            errorMessage = reason
+        }
+    }
+
+    /// Follows one destination: a source location opens a tab (keeping the
+    /// current evaluation context where it applies), a node reveals in the
+    /// build tree.
+    public func go(to location: SemanticLocation, from tab: SourceTab? = nil) {
+        if let path = location.path, location.available != false {
+            openFile(
+                path: path,
+                line: location.line ?? 1,
+                preferredEvaluationId: tab?.evaluationId ?? selectedTab?.evaluationId)
+            return
+        }
+
+        if let nodeId = location.nodeId {
+            onReveal?(nodeId)
+            return
+        }
+
+        errorMessage = location.path.map { "'\($0)' is not embedded in this binlog." }
+            ?? "This destination is not available."
+    }
+
+    static func title(for token: MSBuildToken) -> String {
+        switch token.kind {
+        case .property: return "$(\(token.name))"
+        case .item: return "@(\(token.name))"
+        case .targetDefinition, .targetReference: return "Target \(token.name)"
+        case .importPath, .sdkReference: return token.name
+        }
     }
 }

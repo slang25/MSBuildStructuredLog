@@ -112,6 +112,13 @@ struct MainWindowView: View {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 session.requestReveal(nodeId: arguments[flagIndex + 1])
             }
+
+            // -source <path> (debug aid): open an embedded build file in the
+            // document well, so the semantic layer can be exercised directly.
+            if let flagIndex = arguments.firstIndex(of: "-source"), arguments.indices.contains(flagIndex + 1) {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                session.sources.openFile(path: arguments[flagIndex + 1])
+            }
         }
     }
 
