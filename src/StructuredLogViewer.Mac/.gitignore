@@ -1,0 +1,9 @@
+StructuredLogViewer.xcodeproj/
+build/
+DerivedData/
+.build/
+
+# repo-root **/packages/* is a NuGet rule; this Packages/ is the Swift package
+!Packages/*
+!Packages/**
+Packages/.build/

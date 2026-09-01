@@ -51,7 +51,11 @@ public sealed class LoadedBinlog
                     list.Add(null);
                 }
 
-                list[i] = node;
+                // Nodes added to the tree after BuildAnalyzer ran keep the
+                // default Index 0 and would collide with the Build root.
+                // Both visits are pre-order, so first-wins keeps the
+                // analyzer's assignment.
+                list[i] ??= node;
             });
 
             local = list.ToArray();

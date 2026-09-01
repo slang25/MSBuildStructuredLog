@@ -1,0 +1,83 @@
+# XcodeGen spec for the native macOS viewer. Regenerate the (gitignored)
+# .xcodeproj with:  xcodegen generate
+#
+# The app target is a thin shell: ~all code lives in Packages/
+# (StructuredLogViewerKit) so `swift build && swift test` work headlessly.
+name: StructuredLogViewer
+options:
+  bundleIdPrefix: com.msbuildlog
+  deploymentTarget:
+    macOS: "15.0"
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+
+packages:
+  StructuredLogViewerKit:
+    path: Packages
+
+targets:
+  StructuredLogViewer:
+    type: application
+    platform: macOS
+    sources:
+      - App
+    dependencies:
+      - package: StructuredLogViewerKit
+        product: ViewerUI
+      - framework: ../StructuredLogViewer.NativeBridge/out/libmslog.dylib
+        embed: true
+        codeSign: true
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: MSBuild Structured Log Viewer
+        CFBundleName: StructuredLogViewer
+        LSMinimumSystemVersion: "15.0"
+        NSHumanReadableCopyright: "MIT licensed. https://msbuildlog.com"
+        NSPrincipalClass: NSApplication
+        NSSupportsAutomaticTermination: false
+        NSSupportsSuddenTermination: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: MSBuild Binary Log
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.microsoft.msbuild.binlog
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.microsoft.msbuild.binlog
+            UTTypeDescription: MSBuild Binary Log
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - binlog
+    entitlements:
+      path: App/StructuredLogViewer.entitlements
+      properties:
+        # Not sandboxed: the viewer opens arbitrary user paths handed over
+        # the C ABI, and the .NET engine reads them directly.
+        com.apple.security.cs.disable-library-validation: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.msbuildlog.StructuredLogViewer
+        SWIFT_VERSION: "6.0"
+        ENABLE_HARDENED_RUNTIME: true
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../StructuredLogViewer.NativeBridge/out"
+        DEAD_CODE_STRIPPING: true
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+    preBuildScripts:
+      - name: Build libmslog.dylib
+        shell: /bin/bash
+        script: |
+          # Set SKIP_DOTNET=1 for pure-Swift iteration (reuses the last dylib).
+          set -euo pipefail
+          BRIDGE="$SRCROOT/../StructuredLogViewer.NativeBridge"
+          if [ "${SKIP_DOTNET:-0}" = "1" ] && [ -f "$BRIDGE/out/libmslog.dylib" ]; then
+            echo "SKIP_DOTNET=1 — reusing existing libmslog.dylib"
+            exit 0
+          fi
+          "$BRIDGE/build-dylib.sh"
+        outputFiles:
+          - $(SRCROOT)/../StructuredLogViewer.NativeBridge/out/libmslog.dylib

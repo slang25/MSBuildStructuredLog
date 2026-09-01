@@ -32,7 +32,7 @@ lines: <start>-<end>
         [Description("Last line to return (1-based, inclusive). Default startLine + 500. Capped to startLine + 5000.")] int? endLine = null) => Run(() =>
     {
         var entry = Cache.Load(path);
-        var node = NodeId.Resolve(entry, evaluationId);
+        var node = NodeId.Resolve(entry.IndexMap, evaluationId);
         if (node is not ProjectEvaluation evaluation)
         {
             throw new InvalidOperationException(

@@ -1,0 +1,13 @@
+<!-- StructuredLogger's Reflector reads/writes private fields of the MSBuild
+     event-args types via Linq Expressions (message, senderName, timestamp,
+     arguments/argumentsOrFormattedMessage, file, lineNumber, columnNumber).
+     NativeAOT trims that field metadata by default, which silently breaks
+     binlog reading (every record throws, yielding an empty build). Preserve
+     the whole types so the reflection-based accessors keep working. -->
+<linker>
+  <assembly fullname="Microsoft.Build.Framework">
+    <type fullname="Microsoft.Build.Framework.BuildEventArgs" preserve="all" />
+    <type fullname="Microsoft.Build.Framework.LazyFormattedBuildEventArgs" preserve="all" />
+    <type fullname="Microsoft.Build.Framework.BuildMessageEventArgs" preserve="all" />
+  </assembly>
+</linker>
