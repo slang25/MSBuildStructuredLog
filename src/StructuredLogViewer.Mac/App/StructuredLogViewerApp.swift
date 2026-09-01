@@ -24,8 +24,14 @@ struct StructuredLogViewerApp: App {
                         .frame(minWidth: 900, minHeight: 560)
                         .onAppear {
                             NSDocumentController.shared.noteNewRecentDocumentURL(url)
+                            WindowRouter.documentWindowOpened()
+                        }
+                        .onDisappear {
+                            WindowRouter.documentWindowClosed()
                         }
                 } else {
+                    // The window macOS creates at launch with nothing to
+                    // open: the welcome screen.
                     WelcomeView()
                         .frame(minWidth: 520, minHeight: 380)
                         .navigationTitle("Welcome")
@@ -49,8 +55,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        // The URL-less window is the welcome screen.
+        // The untitled window is the welcome screen.
         true
+    }
+
+    /// Clicking the dock icon with everything closed brings back the
+    /// welcome screen rather than nothing.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            WindowRouter.showWelcome()
+            return false
+        }
+
+        return true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Windows tear down on quit; that must not resurrect the welcome
+        // window (see WindowRouter.documentWindowClosed).
+        MainActor.assumeIsolated { WindowRouter.isTerminating = true }
+        return .terminateNow
     }
 }
 
@@ -73,13 +97,51 @@ enum WindowRouter {
         }
     }
 
+    /// Raises the welcome screen: the launch window if it is still up,
+    /// otherwise an AppKit-hosted one (the scene system can't reopen a
+    /// value-less WindowGroup window).
+    static func showWelcome() {
+        if let existing = NSApp.windows.first(where: { isWelcomeWindow($0) && $0.isVisible }) {
+            existing.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+
+        WelcomeWindow.show()
+    }
+
     /// A document window superseding the welcome screen closes it.
     static func closeWelcomeWindows() {
         DispatchQueue.main.async {
-            for window in NSApp.windows where window.title == "Welcome" && window.isVisible {
+            for window in NSApp.windows where isWelcomeWindow(window) && window.isVisible {
                 window.close()
             }
         }
+    }
+
+    /// Closing the last binlog window returns to the welcome screen,
+    /// so the app is never left with no way back in.
+    static func documentWindowOpened() {
+        documentWindowCount += 1
+    }
+
+    static func documentWindowClosed() {
+        documentWindowCount = max(0, documentWindowCount - 1)
+        guard documentWindowCount == 0, !isTerminating else { return }
+
+        // Let the closing window finish tearing down first.
+        DispatchQueue.main.async {
+            guard documentWindowCount == 0, !isTerminating else { return }
+            showWelcome()
+        }
+    }
+
+    static var isTerminating = false
+
+    private static var documentWindowCount = 0
+
+    static func isWelcomeWindow(_ window: NSWindow) -> Bool {
+        window.representedURL == nil && window.title == "Welcome"
     }
 
     static var openWindowAction: ((URL) -> Void)? {
@@ -119,12 +181,51 @@ struct OpenCommands: Commands {
             }
             .keyboardShortcut("o")
         }
+
+        CommandGroup(before: .windowList) {
+            Button("Welcome to MSBuild Structured Log Viewer") {
+                WindowRouter.showWelcome()
+            }
+            .keyboardShortcut("0", modifiers: [.shift, .command])
+
+            Divider()
+        }
+    }
+}
+
+/// The welcome screen outside the scene system, so it can be reopened
+/// after the launch window is gone (same pattern as SyntaxHelpWindow).
+@MainActor
+enum WelcomeWindow {
+    private static var window: NSWindow?
+    private static var hostingController: NSHostingController<WelcomeView>?
+
+    static func show() {
+        if let window {
+            // Rebuild the view so the recents list reflects anything
+            // opened since this window was last shown.
+            hostingController?.rootView = WelcomeView()
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+
+        let hosting = NSHostingController(rootView: WelcomeView())
+        hostingController = hosting
+        let newWindow = NSWindow(contentViewController: hosting)
+        newWindow.title = "Welcome"
+        newWindow.setContentSize(NSSize(width: 760, height: 440))
+        newWindow.contentMinSize = NSSize(width: 560, height: 380)
+        newWindow.isReleasedWhenClosed = false
+        newWindow.center()
+        newWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+        window = newWindow
     }
 }
 
 /// Welcome window: open button, recent binlogs, drop target.
 struct WelcomeView: View {
-    @Environment(\.openWindow) private var openWindow
     @State private var isDropTargeted = false
 
     private var recents: [URL] {
@@ -165,7 +266,7 @@ struct WelcomeView: View {
                     Section("Recent") {
                         ForEach(recents, id: \.absoluteString) { url in
                             Button {
-                                openWindow(value: url)
+                                WindowRouter.open(url: url)
                             } label: {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(url.lastPathComponent)
@@ -190,8 +291,7 @@ struct WelcomeView: View {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
                     if let url, url.pathExtension == "binlog" {
                         Task { @MainActor in
-                            openWindow(value: url)
-                            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+                            WindowRouter.open(url: url)
                         }
                     }
                 }
