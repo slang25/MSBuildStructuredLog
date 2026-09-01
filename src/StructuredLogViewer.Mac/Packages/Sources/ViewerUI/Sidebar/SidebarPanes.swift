@@ -72,13 +72,15 @@ struct SearchLogPane: View {
                     Divider()
                     ResultTreeView(roots: response.roots, onSelect: onSelect)
                 }
-            } else if !controller.recentSearches.isEmpty {
-                RecentSearchesList(controller: controller)
             } else {
-                ContentUnavailableView(
-                    "Search the Build Log",
-                    systemImage: "magnifyingglass",
-                    description: Text("Type at least 3 characters, or a $-query like $error."))
+                SearchWatermarkView(
+                    recents: controller.recentSearches,
+                    maxResults: controller.maxResults,
+                    onSearch: { query in
+                        controller.query = query
+                        controller.searchNow()
+                    },
+                    onClearRecents: { controller.clearRecents() })
             }
         }
     }
@@ -105,38 +107,6 @@ struct SearchStatusBar: View {
         }
         text += String(format: " · %.0f ms", response.elapsedMs)
         return text
-    }
-}
-
-struct RecentSearchesList: View {
-    @Bindable var controller: SearchController
-
-    var body: some View {
-        List {
-            Section {
-                ForEach(controller.recentSearches, id: \.self) { recent in
-                    Button {
-                        controller.query = recent
-                        controller.searchNow()
-                    } label: {
-                        Label(recent, systemImage: "clock.arrow.circlepath")
-                            .font(.caption)
-                            .lineLimit(1)
-                    }
-                    .buttonStyle(.plain)
-                }
-            } header: {
-                HStack {
-                    Text("Recent Searches")
-                    Spacer()
-                    Button("Clear") { controller.clearRecents() }
-                        .buttonStyle(.plain)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .listStyle(.sidebar)
     }
 }
 
@@ -194,10 +164,10 @@ struct PropertiesItemsPane: View {
                         ResultTreeView(roots: response.roots, onSelect: onSelect)
                     }
                 } else {
-                    ContentUnavailableView(
-                        "Search Properties and Items",
-                        systemImage: "list.bullet.rectangle",
-                        description: Text("Scoped to the selected project or evaluation."))
+                    PropertiesItemsWatermarkView { query in
+                        controller.query = query
+                        controller.searchNow()
+                    }
                 }
             } else {
                 ContentUnavailableView(
