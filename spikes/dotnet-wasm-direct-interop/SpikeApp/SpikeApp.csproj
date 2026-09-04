@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Microsoft.NET.Sdk.WebAssembly sets RuntimeIdentifier=browser-wasm itself. -->
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!--
+      The properties that matter for direct Rust <-> .NET interop.
+      WasmBuildNative: relink dotnet.native.wasm with emcc instead of using the prebuilt one.
+      (It is implied by having a NativeFileReference, but spelled out here.)
+    -->
+    <WasmBuildNative>true</WasmBuildNative>
+    <!-- Keep symbol names / function names in the wasm so DevTools stack traces are readable. -->
+    <WasmNativeStrip>false</WasmNativeStrip>
+    <WasmEmitSymbolMap>true</WasmEmitSymbolMap>
+    <!-- Fail the link on unresolved symbols so a missing engine_* export is caught at build time. -->
+    <WasmAllowUndefinedSymbols>false</WasmAllowUndefinedSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The Rust staticlib. Its file name (without extension) is the module name that
+      [DllImport("libspike")] must use: the wasm SDK generates a P/Invoke table keyed on it.
+    -->
+    <NativeFileReference Include="../spike-rs/out/libspike.a" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Keep the UnmanagedCallersOnly exports alive through IL trimming (see the file for why). -->
+    <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <StaticWebAssetFingerprintPattern Include="JS" Pattern="*.js" Expression="#[.{fingerprint}]!" />
+  </ItemGroup>
+</Project>

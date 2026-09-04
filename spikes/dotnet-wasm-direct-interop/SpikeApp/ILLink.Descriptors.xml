@@ -1,0 +1,11 @@
+<!--
+  Roots the UnmanagedCallersOnly exports against IL trimming (dotnet publish trims browser-wasm apps
+  by default). Nothing in managed code references Engine.* (only Rust calls them), so without this the
+  trimmer removes them, the wasm SDK generates no C thunks, and wasm-ld fails with
+  "undefined symbol: engine_*". Alternatives: [DynamicDependency] on Main, or <TrimmerRootAssembly>.
+-->
+<linker>
+  <assembly fullname="SpikeApp">
+    <type fullname="Engine" preserve="all" />
+  </assembly>
+</linker>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>StructuredLogViewer.WebEngine test</title>
+  <style>
+    body { font: 13px/1.45 ui-monospace, Menlo, monospace; margin: 1.5rem; color: #222; }
+    h1 { font-size: 16px; }
+    pre { background: #111; color: #cfc; padding: 1rem; white-space: pre-wrap; word-break: break-word; }
+    .fail { color: #f88; }
+    #bar { height: 6px; background: #ddd; margin: .5rem 0; }
+    #fill { height: 100%; width: 0; background: #3a7; }
+  </style>
+</head>
+<body>
+  <h1>StructuredLogViewer.WebEngine (browser-wasm) &mdash; protocol test</h1>
+  <div id="bar"><div id="fill"></div></div>
+  <pre id="out">starting worker...</pre>
+  <script type="module">
+    const out = document.getElementById('out');
+    const fill = document.getElementById('fill');
+    const lines = [];
+    const log = (s, cls) => { lines.push(cls ? `<span class="${cls}">${esc(s)}</span>` : esc(s)); out.innerHTML = lines.join('\n'); console.log(s); };
+    const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const fmt = (ms) => `${ms.toFixed(1)} ms`;
+    const bytes = (n) => `${(n / 1024 / 1024).toFixed(2)} MB`;
+
+    const t0 = performance.now();
+    const worker = new Worker('./engine-worker.js', { type: 'module' });
+    const pending = new Map();
+    let nextId = 1;
+    const ready = new Promise((resolve, reject) => {
+      worker.onmessage = (e) => {
+        const m = e.data;
+        if (m.event === 'ready') return resolve();
+        if (m.event === 'error') return reject(new Error(m.error.message));
+        if (m.event === 'progress') { fill.style.width = `${(m.ratio * 100).toFixed(1)}%`; return; }
+        const p = pending.get(m.id);
+        if (!p) return;
+        pending.delete(m.id);
+        m.ok ? p.resolve(m.result) : p.reject(Object.assign(new Error(m.error.message), { code: m.error.code }));
+      };
+      worker.onerror = (e) => reject(new Error(e.message));
+    });
+    const call = (method, args) => new Promise((resolve, reject) => {
+      const id = nextId++;
+      pending.set(id, { resolve, reject });
+      worker.postMessage({ id, method, args });
+    });
+    const timed = async (label, method, args, summarize) => {
+      const t = performance.now();
+      try {
+        const r = await call(method, args);
+        const dt = performance.now() - t;
+        log(`OK   ${label} (${fmt(dt)}): ${summarize(r)}`);
+        return r;
+      } catch (err) {
+        log(`FAIL ${label}: [${err.code}] ${err.message}`, 'fail');
+        failures++;
+        return undefined;
+      }
+    };
+    let failures = 0;
+
+    window.__engineTest = { done: false, ok: false, results: {} };
+    const R = window.__engineTest.results;
+    try {
+      await ready;
+      log(`worker ready in ${fmt(performance.now() - t0)}`);
+
+      R.open = await timed('open sample.binlog', 'open', { url: './sample.binlog' },
+        (r) => `rootId=${r.rootId} succeeded=${r.succeeded} nodes=${r.nodeCount} errors=${r.errorCount} warnings=${r.warningCount} size=${bytes(r.fileSize)} msbuild=${r.msBuildVersion}`);
+      R.buildInfo = await timed('build_info', 'build_info', {}, (r) => `rootId=${r.rootId} durationMs=${r.durationMs} hasSourceArchive=${r.hasSourceArchive}`);
+      R.children = await timed('node_children(root, 0, 50)', 'node_children', { id: R.buildInfo?.rootId ?? R.open?.rootId, offset: 0, count: 50, sortMode: 0 },
+        (r) => `total=${r.total} count=${r.count}; first: ${r.children.slice(0, 4).map((c) => `[${c.kind}] ${c.title}`).join(' | ')}`);
+      R.details = await timed('node_get(root)', 'node_get', { id: R.open?.rootId }, (r) => `kind=${r.node.kind} title="${r.node.title}" start=${r.startTime}`);
+      const firstProject = R.children?.children.find((c) => c.kind === 'Project');
+      if (firstProject) {
+        R.ancestors = await timed(`node_ancestors(${firstProject.id})`, 'node_ancestors', { id: firstProject.id },
+          (r) => `chain=${r.chain.map((c) => c.kind).join(' > ')}`);
+        R.preprocess = await timed(`node_preprocess(${firstProject.id})`, 'node_preprocess', { id: firstProject.id }, (r) => `${r.text.length} chars`);
+      }
+      R.search = await timed('search $warning', 'search', { query: '$warning', maxResults: 100 },
+        (r) => `resultCount=${r.resultCount} roots=${r.roots.length} elapsedMs=${r.elapsedMs.toFixed(1)}; first: ${r.roots.slice(0, 2).map((n) => n.node?.title ?? n.text).join(' | ')}`);
+      R.searchCsc = await timed('search Csc', 'search', { query: 'Csc', maxResults: 20 }, (r) => `resultCount=${r.resultCount} overflow=${r.overflow}`);
+      R.timeline = await timed('timeline', 'timeline', {},
+        (r) => `lanes=${r.lanes.length} blocks=${r.lanes.reduce((n, l) => n + l.blocks.length, 0)} durationMs=${r.durationMs.toFixed(1)}`);
+      const projectFile = firstProject?.props?.projectFile;
+      if (projectFile) {
+        R.semanticFile = await timed(`semantic_file(${projectFile})`, 'semantic_file', { path: projectFile, evaluationId: null },
+          (r) => `evaluationId=${r.evaluationId} contexts=${r.contexts.length}/${r.contextsTotal} imports=${r.imports.length} skipped=${r.skippedImports.length} targets=${r.targets.length}`);
+        R.fileRead = await timed(`file_read(${projectFile})`, 'file_read', { path: projectFile }, (r) => `${r.text.length} chars`);
+        R.semanticResolve = await timed('semantic_resolve(property MSBuildProjectName)', 'semantic_resolve',
+          { evaluationId: R.semanticFile?.evaluationId, kind: 'property', name: 'MSBuildProjectName' },
+          (r) => `found=${r.found} value=${r.value} definitions=${r.definitions?.length ?? 0}`);
+        R.source = await timed(`node_source(${firstProject.id})`, 'node_source', { id: firstProject.id },
+          (r) => `filePath=${r.filePath} line=${r.line} text=${r.text ? r.text.length + ' chars' : 'absent'}`);
+      }
+      // Error paths.
+      await call('node_get', { id: 'nope' }).then(() => { failures++; log('FAIL bad node id did not error', 'fail'); },
+        (err) => log(`OK   node_get(bad id) -> [${err.code}] ${err.message}`));
+      await timed('close', 'close', {}, () => 'closed');
+      await call('build_info', {}).then(() => { failures++; log('FAIL build_info after close did not error', 'fail'); },
+        (err) => log(`OK   build_info after close -> [${err.code}] ${err.message}`));
+      log(`ALL DONE in ${fmt(performance.now() - t0)}; failures=${failures}`, failures ? 'fail' : undefined);
+      window.__engineTest.ok = failures === 0;
+    } catch (err) {
+      log(`ABORTED: ${err.message}`, 'fail');
+    } finally {
+      window.__engineTest.done = true;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+[workspace]
+
+[package]
+name = "gpui-web-hello"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "gpui-web-hello"
+path = "src/main.rs"
+
+[dependencies]
+# Exact same gpui revision as src/StructuredLogViewer.Gpui.Rust.
+gpui = { git = "https://github.com/zed-industries/zed", rev = "f66ed399" }
+# Depend on gpui_web directly (not via gpui_platform) so we can turn off its
+# default `multithreaded` feature: that feature needs wasm atomics + shared
+# memory, which in turn needs a nightly toolchain and `-Z build-std`.
+gpui_web = { git = "https://github.com/zed-industries/zed", rev = "f66ed399", default-features = false }
+console_error_panic_hook = "0.1.7"
+web-sys = { version = "0.3", features = ["Location", "Window"] }
+web-time = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

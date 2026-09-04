@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Microsoft.NET.Sdk.WebAssembly sets RuntimeIdentifier=browser-wasm itself. -->
+    <OutputType>Exe</OutputType>
+    <RootNamespace>StructuredLogViewer.WebEngine</RootNamespace>
+    <AssemblyName>StructuredLogViewer.WebEngine</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <XmlResolverIsNetworkingEnabledByDefault>false</XmlResolverIsNetworkingEnabledByDefault>
+    <NoWarn>$(NoWarn);NU1701;CS8632;IL2026;IL2067;IL2070;IL2072;IL2075;IL2104;IL3050</NoWarn>
+    <NuGetAudit>false</NuGetAudit>
+    <IsPackable>false</IsPackable>
+    <!-- Keep real exception messages (the trimmed default replaces them with resource keys such as
+         "Arg_ParamName_Name"); they travel to the UI in the error envelope. -->
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
+
+    <!-- Keep every file name stable: the worker imports ./_framework/dotnet.js by name (import maps do not
+         apply inside a Worker) and the page loads engine-worker.js / sample.binlog by name. -->
+    <StaticWebAssetsFingerprintContent>false</StaticWebAssetsFingerprintContent>
+    <WasmFingerprintAssets>false</WasmFingerprintAssets>
+    <WasmFingerprintDotnetJs>false</WasmFingerprintDotnetJs>
+    <!-- No .br/.gz twins next to every file; a plain static server would not use them anyway. -->
+    <CompressionEnabled>false</CompressionEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pulls in StructuredLogger + StructuredLogger.Utils. The bridge's classes are internal; see the
+         InternalsVisibleTo for StructuredLogViewer.WebEngine in the bridge csproj. -->
+    <ProjectReference Include="..\..\StructuredLogViewer.NativeBridge\StructuredLogViewer.NativeBridge.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same trimming root the NativeAOT dylib needs: StructuredLogger's Reflector reads private fields of the
+         MSBuild event-args types via Linq Expressions; without this the wasm publish trims them and every
+         binlog record fails to deserialize (empty build). TrimmerRootDescriptor only applies to the project
+         being published, so the bridge's copy is referenced here directly. -->
+    <TrimmerRootDescriptor Include="..\..\StructuredLogViewer.NativeBridge\ILLink.Descriptors.xml" />
+  </ItemGroup>
+
+</Project>

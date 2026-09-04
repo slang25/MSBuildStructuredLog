@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- The repo uses Central Package Management; this project has no PackageReferences of its own. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

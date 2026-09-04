@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>dotnet + Rust in one wasm module</title>
+  <meta charset="UTF-8">
+  <link rel="preload" id="webassembly" />
+  <script type="importmap"></script>
+  <script type='module' src="main#[.{fingerprint}].js"></script>
+  <style>
+    body { font: 14px/1.4 ui-monospace, Menlo, monospace; margin: 1.5rem; }
+    pre { background: #111; color: #cfc; padding: 1rem; white-space: pre-wrap; }
+    #tick { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>dotnet.native.wasm with a Rust staticlib linked in</h1>
+  <p>Below is <code>Console.WriteLine</code> output from C#. Lines tagged <code>[rust]</code> were produced by Rust code inside the same wasm module; <code>engine_*</code> lines are C# being called <em>from Rust</em>.</p>
+  <p><button id="spin" disabled>Run 3s synchronous Rust spin (blocks the main thread)</button> <span id="tick">rAF ticks: 0</span></p>
+  <pre id="out">booting .NET runtime...</pre>
+</body>
+</html>

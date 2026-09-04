@@ -1,0 +1,7 @@
+[serve]
+addresses = ["127.0.0.1"]
+port = 8765
+open = false
+# COOP/COEP are only required for SharedArrayBuffer (multithreaded build);
+# harmless for the single-threaded build and kept for parity with hello_web.
+headers = { "Cross-Origin-Embedder-Policy" = "require-corp", "Cross-Origin-Opener-Policy" = "same-origin" }
