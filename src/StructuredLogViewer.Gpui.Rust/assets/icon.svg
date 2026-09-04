@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The viewer's brand mark, shared with the SwiftUI macOS app
+  (../StructuredLogViewer.Mac/scripts/generate-appicon.swift): a parent node
+  with a trunk down to two rows of children — the structured log tree.
+
+  Authored full-bleed. Platform padding is the generator's job:
+  `cargo run` the generate-icons example insets this for the macOS grid
+  and leaves it edge to edge everywhere else.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3D4453"/>
+      <stop offset="1" stop-color="#191D26"/>
+    </linearGradient>
+    <linearGradient id="parent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#DFC0FE"/><stop offset="1" stop-color="#C2A0E5"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3A96FE"/><stop offset="1" stop-color="#2072E5"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9AEEA4"/><stop offset="1" stop-color="#6ECF83"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#42BFFE"/><stop offset="1" stop-color="#169FE5"/>
+    </linearGradient>
+    <linearGradient id="yellow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E8FE55"/><stop offset="1" stop-color="#CDE528"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="512" height="512" rx="115" ry="115" fill="url(#tile)"/>
+
+  <!-- Motif: authored on a 72-unit grid, scaled 4.4167x and centred. -->
+  <g transform="translate(97 97) scale(4.4167)">
+    <g fill="#D9DEEB">
+      <rect x="6" y="18" width="4" height="46" rx="1"/>
+      <rect x="6" y="34" width="20" height="4" rx="1"/>
+      <rect x="6" y="60" width="20" height="4" rx="1"/>
+    </g>
+    <rect x="0"  y="0"  width="20" height="20" rx="3.5" fill="url(#parent)"/>
+    <rect x="26" y="26" width="20" height="20" rx="3.5" fill="url(#blue)"/>
+    <rect x="52" y="26" width="20" height="20" rx="3.5" fill="url(#green)"/>
+    <rect x="26" y="52" width="20" height="20" rx="3.5" fill="url(#cyan)"/>
+    <rect x="52" y="52" width="20" height="20" rx="3.5" fill="url(#yellow)"/>
+  </g>
+</svg>

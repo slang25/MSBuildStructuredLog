@@ -1,0 +1,13 @@
+# Web build of the viewer: `trunk build --release` from this directory.
+# The engine (.NET browser-wasm in a Web Worker) is built separately by
+# ../StructuredLogViewer.Web/build.sh, which also stages both into dist/.
+[build]
+target = "web/index.html"
+dist = "../StructuredLogViewer.Web/dist"
+release = true
+filehash = false
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 8780
+open = false
