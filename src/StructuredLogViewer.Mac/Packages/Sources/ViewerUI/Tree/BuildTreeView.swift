@@ -127,6 +127,17 @@ final class TreeOutlineView: NSOutlineView {
             return
         }
 
+        // Space opens the row's source, same as a double-click. This costs
+        // AppKit's type-select-on-space, which is no loss: node names are
+        // paths and target names, so nobody types-ahead a leading space.
+        if event.charactersIgnoringModifiers == " ",
+           !event.modifierFlags.contains(.command),
+           let node = controller?.selectedNode,
+           !node.isPlaceholder {
+            controller?.onDoubleClick?(node)
+            return
+        }
+
         super.keyDown(with: event)
     }
 }

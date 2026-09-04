@@ -32,6 +32,9 @@ targets:
       properties:
         CFBundleDisplayName: MSBuild Structured Log Viewer
         CFBundleName: StructuredLogViewer
+        # Info.plist is authored here rather than generated, so the asset
+        # catalog's icon has to be named explicitly.
+        CFBundleIconName: AppIcon
         LSMinimumSystemVersion: "15.0"
         NSHumanReadableCopyright: "MIT licensed. https://msbuildlog.com"
         NSPrincipalClass: NSApplication
@@ -60,6 +63,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.msbuildlog.StructuredLogViewer
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_VERSION: "6.0"
         ENABLE_HARDENED_RUNTIME: true
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"

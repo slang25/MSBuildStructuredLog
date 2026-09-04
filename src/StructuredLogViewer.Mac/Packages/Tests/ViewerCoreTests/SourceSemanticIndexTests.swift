@@ -10,10 +10,17 @@ final class SourceSemanticIndexTests: XCTestCase {
     </Project>
     """
 
-    private func index(imports: [SemanticImport]) -> SourceSemanticIndex {
+    private func index(
+        imports: [SemanticImport],
+        skipped: [SemanticSkippedImport] = []
+    ) -> SourceSemanticIndex {
         SourceSemanticIndex(
             text: text,
-            file: SemanticFile(path: "a.csproj", evaluationId: "7", imports: imports))
+            file: SemanticFile(
+                path: "a.csproj",
+                evaluationId: "7",
+                imports: imports,
+                skippedImports: skipped))
     }
 
     private func offset(of substring: String) -> Int {
@@ -34,13 +41,73 @@ final class SourceSemanticIndexTests: XCTestCase {
         XCTAssertEqual(location.path, "/repo/Shared.props")
     }
 
-    func testImportWithNoRecordedEdgeIsNotNavigable() {
-        // Line 3's <Import> was never logged (condition false, say). It gets
-        // no underline at all rather than a link that goes nowhere.
+    func testImportTheBuildNeverMentionedIsNotTracked() {
+        // Line 3's <Import> appears in neither list — the build has nothing
+        // to say about it, so it gets no token at all rather than a link
+        // that goes nowhere.
         let index = index(imports: [
             SemanticImport(line: 2, importedPath: "/repo/Shared.props", available: true)
         ])
         XCTAssertNil(index.token(at: offset(of: "Missing.props")))
+    }
+
+    func testSkippedImportIsTrackedButNotNavigable() {
+        let index = index(
+            imports: [SemanticImport(line: 2, importedPath: "/repo/Shared.props", available: true)],
+            skipped: [SemanticSkippedImport(
+                line: 3,
+                fileSpec: "Missing.props",
+                reason: "Not imported due to false condition",
+                condition: "'$(Flag)' == 'true'",
+                evaluatedCondition: "'' == 'true'")])
+
+        // Tracked, so hovering explains it...
+        let token = index.token(at: offset(of: "Missing.props"))
+        XCTAssertEqual(token?.kind, .importPath)
+
+        // ...but no underline and no destination.
+        XCTAssertFalse(index.isNavigable(token!))
+        guard case .none(let reason) = index.importNavigation(for: token!) else {
+            return XCTFail("a skipped import has nowhere to go")
+        }
+        XCTAssertEqual(reason, "Condition '$(Flag)' == 'true' evaluated as '' == 'true' → false")
+    }
+
+    func testTakenImportStaysNavigable() {
+        let index = index(
+            imports: [SemanticImport(line: 2, importedPath: "/repo/Shared.props", available: true)],
+            skipped: [SemanticSkippedImport(line: 3, fileSpec: "Missing.props", reason: "gone")])
+
+        XCTAssertTrue(index.isNavigable(index.token(at: offset(of: "Shared.props"))!))
+    }
+
+    func testSkipWithoutAConditionFallsBackToTheLoggedReason() {
+        let index = index(
+            imports: [],
+            skipped: [SemanticSkippedImport(
+                line: 3,
+                fileSpec: "Missing.props",
+                reason: "Not imported due to no matching files")])
+
+        let token = index.token(at: offset(of: "Missing.props"))!
+        guard case .none(let reason) = index.importNavigation(for: token) else {
+            return XCTFail("a skipped import has nowhere to go")
+        }
+        XCTAssertEqual(reason, "Not imported due to no matching files")
+        XCTAssertEqual(index.skippedImports(for: token).count, 1)
+    }
+
+    func testSkippedImportsAreOrderedBySourcePosition() {
+        let index = index(
+            imports: [],
+            skipped: [
+                SemanticSkippedImport(line: 3, column: 3, fileSpec: "b"),
+                SemanticSkippedImport(line: 2, column: 3, fileSpec: "a"),
+                // Line 0 is an implicit SDK expansion: no element to anchor to.
+                SemanticSkippedImport(line: 0, fileSpec: "implicit"),
+            ])
+
+        XCTAssertEqual(index.skippedImports.map(\.fileSpec), ["a", "b"])
     }
 
     func testSdkAttributeFallsBackToImplicitImports() {

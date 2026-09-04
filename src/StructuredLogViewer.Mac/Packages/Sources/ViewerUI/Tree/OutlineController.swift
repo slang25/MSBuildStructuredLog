@@ -155,6 +155,21 @@ extension OutlineController: NSOutlineViewDelegate {
                 tooltip: summary.props?["parentTargetTooltip"]) { [weak self] in
                     self?.navigateToParentTarget(of: nodeId)
                 }
+        } else if let evaluationText = summary.props?["evaluationText"],
+                  !evaluationText.isEmpty,
+                  let destination = summary.props?["evaluationNodeId"] {
+            // A project's "id:42" jumps to the evaluation that produced it —
+            // the same hyperlink the other viewers put there. Only project
+            // rows carry it, and they never carry a parent-target link, so
+            // the two share the cell's one link slot without competing.
+            // The label is an MSBuild evaluation id, not a node id, so the
+            // destination comes resolved from the engine.
+            cell.setLink(
+                text: evaluationText,
+                tooltip: "Go to the evaluation for this project",
+                style: .muted) { [weak self] in
+                    self?.reveal(id: destination)
+                }
         } else {
             cell.setLink(text: nil, tooltip: nil, action: nil)
         }
@@ -245,7 +260,21 @@ final class NodeTableCellView: NSTableCellView {
         fatalError("init(coder:) is not supported")
     }
 
-    func setLink(text: String?, tooltip: String?, action: (() -> Void)?) {
+    enum LinkStyle {
+        /// A target's parent-target jump: as prominent as the row itself.
+        case prominent
+
+        /// A project's evaluation id: present, but not competing with the
+        /// project name. The other viewers draw it at half opacity.
+        case muted
+    }
+
+    func setLink(
+        text: String?,
+        tooltip: String?,
+        style: LinkStyle = .prominent,
+        action: (() -> Void)?
+    ) {
         guard let text, !text.isEmpty, let action else {
             linkButton.isHidden = true
             linkAction = nil
@@ -254,7 +283,9 @@ final class NodeTableCellView: NSTableCellView {
 
         linkButton.attributedTitle = NSAttributedString(string: text, attributes: [
             .font: NodeStyling.rowFont,
-            .foregroundColor: NSColor.systemPurple,
+            .foregroundColor: style == .muted
+                ? NSColor.secondaryLabelColor
+                : NSColor.systemPurple,
         ])
         linkButton.toolTip = tooltip
         linkButton.isHidden = false

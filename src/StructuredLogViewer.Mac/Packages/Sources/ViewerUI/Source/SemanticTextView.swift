@@ -3,8 +3,13 @@ import ViewerCore
 
 @MainActor
 protocol SemanticTextViewDelegate: AnyObject {
-    /// The navigable token at a character offset, if any.
+    /// The token the editor tracks at a character offset, if any.
     func semanticToken(at offset: Int) -> MSBuildToken?
+
+    /// Whether Cmd-clicking this token goes anywhere. A tracked token that
+    /// isn't navigable still shows quick info; it just gets no underline or
+    /// link cursor.
+    func semanticIsNavigable(_ token: MSBuildToken) -> Bool
 
     /// Cmd-click on a token.
     func semanticActivate(_ token: MSBuildToken, at rect: NSRect)
@@ -26,6 +31,28 @@ protocol SemanticTextViewDelegate: AnyObject {
 /// follows it. Plain clicks still just place the caret.
 final class SemanticTextView: NSTextView {
     weak var semanticDelegate: SemanticTextViewDelegate?
+
+    /// Notes drawn in the margin past the end of a line — the evaluated form
+    /// of a skipped import's condition. Deliberately not part of the text
+    /// storage: every offset the tokenizer, find bar and ruler hold stays
+    /// valid, ⌘A/⌘C round-trips the file exactly as the build saw it, and the
+    /// find bar never matches text the document doesn't contain. The pill
+    /// they're drawn in is what says so on screen.
+    var annotations: [SourceAnnotation] = [] {
+        didSet {
+            guard annotations != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
+    /// Closest a note may sit to the code before it is dropped instead.
+    private static let minimumAnnotationGap: CGFloat = 6
+
+    /// Gap between the end of the element and its note.
+    private static let annotationInset: CGFloat = 12
+
+    /// Breathing room between a note's text and the edge of its pill.
+    private static let annotationPadding = NSSize(width: 7, height: 2)
 
     private var mouseTrackingArea: NSTrackingArea?
     private var underlinedRange: NSRange?
@@ -80,7 +107,8 @@ final class SemanticTextView: NSTextView {
         let clicked = characterOffset(at: event.locationInWindow)
             .flatMap { semanticDelegate?.semanticToken(at: $0) }
 
-        if event.modifierFlags.contains(.command), let token = clicked {
+        if event.modifierFlags.contains(.command), let token = clicked,
+           semanticDelegate?.semanticIsNavigable(token) == true {
             semanticDelegate?.semanticActivate(token, at: boundingRect(for: token.range))
             return
         }
@@ -117,7 +145,8 @@ final class SemanticTextView: NSTextView {
             return
         }
 
-        setUnderline(commandDown ? token.range : nil)
+        let navigable = semanticDelegate?.semanticIsNavigable(token) ?? true
+        setUnderline(commandDown && navigable ? token.range : nil)
         report(token: token, rect: boundingRect(for: token.range))
     }
 
@@ -153,6 +182,73 @@ final class SemanticTextView: NSTextView {
     func resetSemanticState() {
         underlinedRange = nil
         hoveredToken = nil
+        annotations = []
+    }
+
+    // MARK: - annotations
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        drawAnnotations(in: dirtyRect)
+    }
+
+    private func drawAnnotations(in dirtyRect: NSRect) {
+        guard !annotations.isEmpty, let textStorage else { return }
+
+        // A size below the code's, so the pill reads as chrome sitting over
+        // the document rather than as a line of it.
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: (font?.pointSize ?? 12) - 1, weight: .regular),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]
+
+        for annotation in annotations {
+            // The anchor sits just past the closing `>`, so measure the
+            // character before it — that's the glyph we draw after.
+            let anchor = annotation.offset - 1
+            guard anchor >= 0, anchor < textStorage.length else { continue }
+
+            let rect = boundingRect(for: NSRange(location: anchor, length: 1))
+            guard rect.height > 0, rect.intersects(
+                NSRect(x: dirtyRect.minX, y: rect.minY, width: dirtyRect.width, height: rect.height)
+            ) else { continue }
+
+            let string = NSAttributedString(string: annotation.text, attributes: attributes)
+            let textSize = string.size()
+            let pillSize = NSSize(
+                width: (textSize.width + Self.annotationPadding.width * 2).rounded(.up),
+                height: (textSize.height + Self.annotationPadding.height * 2).rounded(.up))
+
+            guard let x = SourceAnnotations.placement(
+                elementEnd: rect.maxX,
+                noteWidth: pillSize.width,
+                trailingMargin: bounds.maxX - textContainerInset.width,
+                inset: Self.annotationInset,
+                minimumGap: Self.minimumAnnotationGap) else { continue }
+
+            // Half-pixel inset so the 1pt stroke lands on the pixel grid
+            // instead of straddling it.
+            let pill = NSRect(
+                x: x,
+                y: (rect.midY - pillSize.height / 2).rounded(),
+                width: pillSize.width,
+                height: pillSize.height).insetBy(dx: 0.5, dy: 0.5)
+
+            let path = NSBezierPath(
+                roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2)
+
+            // Same fill the tree gives a NoImport's reason, so the two views
+            // say the same thing in the same colour.
+            NodeStyling.chipFill.setFill()
+            path.fill()
+            NSColor.separatorColor.setStroke()
+            path.lineWidth = 1
+            path.stroke()
+
+            string.draw(at: NSPoint(
+                x: pill.minX + Self.annotationPadding.width,
+                y: pill.midY - textSize.height / 2))
+        }
     }
 
     // MARK: - geometry

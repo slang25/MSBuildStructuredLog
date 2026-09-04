@@ -76,6 +76,10 @@ struct SourceEditorView: NSViewRepresentable {
             coordinator.load(content: tab.content, isXML: looksLikeXML)
         }
 
+        // After load(), which clears them along with the rest of the state
+        // that belonged to the old content.
+        coordinator.textView?.annotations = tab.annotations
+
         if let line = tab.gotoLine, coordinator.lastGotoToken != tab.gotoToken {
             coordinator.lastGotoToken = tab.gotoToken
             coordinator.goToLine(line)
@@ -204,6 +208,10 @@ struct SourceEditorView: NSViewRepresentable {
 
         func semanticToken(at offset: Int) -> MSBuildToken? {
             semantics?.token(at: offset)
+        }
+
+        func semanticIsNavigable(_ token: MSBuildToken) -> Bool {
+            semantics?.isNavigable(token) ?? true
         }
 
         func semanticHover(_ token: MSBuildToken?, at rect: NSRect) {

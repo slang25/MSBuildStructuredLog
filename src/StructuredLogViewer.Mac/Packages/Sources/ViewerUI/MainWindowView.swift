@@ -402,6 +402,26 @@ public struct ViewerCommands: Commands {
 
     public init() {}
 
+    /// Find acts on the open document, so it is only meaningful with one.
+    private var hasOpenSource: Bool {
+        session?.sources.selectedTab != nil
+    }
+
+    /// A tab can be open while the document well is collapsed, in which case
+    /// there is no editor in the window to find in. Reveal it first, then
+    /// act once SwiftUI has put the editor on screen.
+    private func find(_ action: NSTextFinder.Action) {
+        if let window = NSApp.keyWindow, SourceFind.editor(in: window) != nil {
+            SourceFind.perform(action)
+            return
+        }
+
+        session?.sources.present()
+        DispatchQueue.main.async {
+            SourceFind.perform(action)
+        }
+    }
+
     public var body: some Commands {
         CommandGroup(after: .newItem) {
             Button("Reload") {
@@ -409,6 +429,28 @@ public struct ViewerCommands: Commands {
             }
             .keyboardShortcut("r")
             .disabled(session == nil)
+        }
+
+        // Find belongs to the source editor, which AppKit will not reach on
+        // its own — see SourceFind.
+        CommandGroup(after: .textEditing) {
+            Divider()
+
+            Button("Find…") { find(.showFindInterface) }
+                .keyboardShortcut("f")
+                .disabled(!hasOpenSource)
+
+            Button("Find Next") { find(.nextMatch) }
+                .keyboardShortcut("g")
+                .disabled(!hasOpenSource)
+
+            Button("Find Previous") { find(.previousMatch) }
+                .keyboardShortcut("g", modifiers: [.shift, .command])
+                .disabled(!hasOpenSource)
+
+            Button("Use Selection for Find") { find(.setSearchString) }
+                .keyboardShortcut("e")
+                .disabled(!hasOpenSource)
         }
 
         CommandMenu("Go") {
@@ -426,6 +468,65 @@ public struct ViewerCommands: Commands {
                 SyntaxHelpWindow.show()
             }
         }
+    }
+}
+
+/// Drives the source editor's find bar from the Edit menu.
+///
+/// `NSTextView.usesFindBar` gives the editor a working find bar, but nothing
+/// opens it: AppKit routes find actions to the first responder, and in this
+/// window that is usually the build tree, which is not in the editor's
+/// responder chain. So ⌘F sent down the chain would reach nothing at all.
+///
+/// The document well shows one editor at a time, so locating it in the key
+/// window is unambiguous — and it makes ⌘F mean "find in the open document"
+/// wherever focus happens to be, which is what you want after clicking a node
+/// in the tree to open its source.
+@MainActor
+enum SourceFind {
+    static func perform(_ action: NSTextFinder.Action) {
+        guard let window = NSApp.keyWindow, perform(action, in: window) else {
+            NSSound.beep()
+            return
+        }
+    }
+
+    /// Returns false when the window has no source editor to act on.
+    @discardableResult
+    static func perform(_ action: NSTextFinder.Action, in window: NSWindow) -> Bool {
+        guard let editor = editor(in: window) else { return false }
+
+        // The find bar takes focus itself, but this keeps ⌘G reaching the
+        // editor once the bar is dismissed.
+        if window.firstResponder !== editor {
+            window.makeFirstResponder(editor)
+        }
+
+        // performTextFinderAction reads the action off the sender's tag; there
+        // is no other way to say which find action is meant.
+        let sender = NSMenuItem()
+        sender.tag = action.rawValue
+        editor.performTextFinderAction(sender)
+        return true
+    }
+
+    /// The source editor in a window, if one is on screen.
+    static func editor(in window: NSWindow) -> SemanticTextView? {
+        window.contentView.flatMap(firstEditor(in:))
+    }
+
+    private static func firstEditor(in view: NSView) -> SemanticTextView? {
+        if let editor = view as? SemanticTextView {
+            return editor
+        }
+
+        for subview in view.subviews {
+            if let found = firstEditor(in: subview) {
+                return found
+            }
+        }
+
+        return nil
     }
 }
 

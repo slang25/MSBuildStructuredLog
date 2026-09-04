@@ -34,6 +34,12 @@ public struct SourceTab: Identifiable, Equatable {
     /// engine answers (or when this tab isn't MSBuild XML).
     public var semantics: SourceSemanticIndex?
 
+    /// End-of-element notes the editor draws past the text — currently the
+    /// evaluated form of each skipped import's condition. Computed with
+    /// `semantics`, so the two never disagree about the content they
+    /// describe.
+    public var annotations: [SourceAnnotation] = []
+
     public init(id: String, kind: Kind, title: String, path: String, content: String, gotoLine: Int? = nil) {
         self.id = id
         self.kind = kind
@@ -70,6 +76,11 @@ public struct SemanticQuickInfo: Sendable, Equatable {
     public enum Body: Sendable, Equatable {
         case symbol(SemanticSymbol)
         case imports([SemanticLocation])
+
+        /// An import the build evaluated and declined. Carries the reason
+        /// and, for a false condition, what it expanded to.
+        case skippedImports([SemanticSkippedImport])
+
         case unavailable(String)
     }
 
@@ -224,6 +235,14 @@ public final class SourceController {
         }
     }
 
+    /// Asks the UI to reveal the document well without changing which tab
+    /// is open — for commands that act on the editor and so need it on
+    /// screen first.
+    public func present() {
+        guard selectedTabId != nil else { return }
+        presentationToken += 1
+    }
+
     public func clearError() {
         errorMessage = nil
     }
@@ -256,13 +275,16 @@ public final class SourceController {
                 let file = try await engine.semanticFile(path: path, evaluationId: evaluationId)
                 try Task.checkCancellation()
 
-                // Multi-MB build files: tokenize off the main actor.
-                let index = await Task.detached(priority: .userInitiated) {
-                    SourceSemanticIndex(text: content, file: file)
+                // Multi-MB build files: tokenize and anchor off the main actor.
+                let (index, annotations) = await Task.detached(priority: .userInitiated) {
+                    let index = SourceSemanticIndex(text: content, file: file)
+                    let annotations = SourceAnnotations.importAnnotations(
+                        text: content, skipped: index.skippedImports)
+                    return (index, annotations)
                 }.value
                 try Task.checkCancellation()
 
-                self?.apply(index: index, to: tabId)
+                self?.apply(index: index, annotations: annotations, to: tabId)
             } catch is CancellationError {
             } catch EngineError.cancelled {
             } catch {
@@ -272,9 +294,14 @@ public final class SourceController {
         }
     }
 
-    private func apply(index: SourceSemanticIndex, to tabId: String) {
+    private func apply(
+        index: SourceSemanticIndex,
+        annotations: [SourceAnnotation],
+        to tabId: String
+    ) {
         guard let position = tabs.firstIndex(where: { $0.id == tabId }) else { return }
         tabs[position].semantics = index
+        tabs[position].annotations = annotations
         tabs[position].evaluationId = index.file.evaluationId
         tabs[position].contexts = index.file.contexts ?? []
         tabs[position].contextsTotal = index.file.contextsTotal ?? tabs[position].contexts.count
@@ -295,7 +322,13 @@ public final class SourceController {
             case .choose(let locations):
                 return SemanticQuickInfo(title: title, body: .imports(locations), contextLabel: contextLabel)
             case .none(let reason):
-                return SemanticQuickInfo(title: title, body: .unavailable(reason), contextLabel: contextLabel)
+                // A skip the build recorded explains itself far better than
+                // the generic "nowhere to go" line.
+                let skipped = index.skippedImports(for: token)
+                return SemanticQuickInfo(
+                    title: title,
+                    body: skipped.isEmpty ? .unavailable(reason) : .skippedImports(skipped),
+                    contextLabel: contextLabel)
             }
         }
 

@@ -117,6 +117,10 @@ public enum NodeStyling {
     public static let rowBoldFont = NSFont.boldSystemFont(ofSize: rowFontSize)
     public static let durationFont = NSFont.monospacedDigitSystemFont(ofSize: rowFontSize - 1, weight: .regular)
 
+    /// Badges sit below the row's text size, as in the other viewers, so a
+    /// long TFM list stays a label rather than competing with the name.
+    public static let badgeFont = NSFont.systemFont(ofSize: rowFontSize - 2)
+
     /// Rows are one fixed-height line; attributed strings need the
     /// truncation carried in their own paragraph style.
     static let singleLineStyle: NSParagraphStyle = {
@@ -125,24 +129,84 @@ public enum NodeStyling {
         return style
     }()
 
-    /// Attributed row text for a plain tree node. Newlines in multi-line
-    /// message text collapse so the row stays a single line.
+    /// The fill behind a NoImport row's reason, matching the viewers'
+    /// NoImportFill resource (BlanchedAlmond light, #474138 dark).
+    static let chipFill = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        return isDark
+            ? NSColor(calibratedRed: 0.278, green: 0.255, blue: 0.220, alpha: 1)
+            : NSColor(calibratedRed: 1.0, green: 0.922, blue: 0.804, alpha: 1)
+    }
+
+    /// A project's target-framework badge, matching the viewers'
+    /// TargetFrameworkBackground/Foreground (#E5F0E5 on #274E13). Those
+    /// resources have no dark variant upstream — the light pair is unusable
+    /// on a dark row — so the dark side inverts the same green.
+    static let badgeFill = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.129, green: 0.196, blue: 0.114, alpha: 1)
+            : NSColor(srgbRed: 0.898, green: 0.941, blue: 0.898, alpha: 1)
+    }
+
+    static let badgeText = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.729, green: 0.855, blue: 0.667, alpha: 1)
+            : NSColor(srgbRed: 0.153, green: 0.306, blue: 0.075, alpha: 1)
+    }
+
+    /// A hair of breathing room inside a badge. An attributed-string
+    /// background is a plain rectangle, so the padding has to be characters.
+    private static let badgePadding = "\u{2009}"
+
+    /// Attributed row text for a tree node. Import and NoImport rows carry
+    /// their type label, source position and skip reason as separate runs,
+    /// like the WPF and Avalonia node templates; everything else is its
+    /// title. Newlines in multi-line message text collapse so the row stays
+    /// a single line.
     public static func rowText(for summary: NodeSummary) -> NSAttributedString {
         let text = NSMutableAttributedString()
-        let baseColor: NSColor = summary.isLowRelevance ? .tertiaryLabelColor : .labelColor
+        let dimmed = summary.isLowRelevance
+        let tint = style(for: summary).color
 
-        text.append(NSAttributedString(string: singleLine(summary.title), attributes: [
-            .font: rowFont,
-            .foregroundColor: baseColor,
-            .paragraphStyle: singleLineStyle,
-        ]))
+        for segment in NodeRowText.segments(for: summary) {
+            if text.length > 0 {
+                text.append(NSAttributedString(
+                    string: segment.style == .duration ? "  " : " ",
+                    attributes: [.font: rowFont, .paragraphStyle: singleLineStyle]))
+            }
 
-        if let duration = summary.durationMs, duration > 0 {
-            text.append(NSAttributedString(string: "  " + formatDuration(milliseconds: duration), attributes: [
-                .font: durationFont,
-                .foregroundColor: NSColor.secondaryLabelColor,
+            var attributes: [NSAttributedString.Key: Any] = [
+                .font: rowFont,
                 .paragraphStyle: singleLineStyle,
-            ]))
+            ]
+
+            switch segment.style {
+            case .kindLabel:
+                attributes[.foregroundColor] = dimmed ? tint.withAlphaComponent(0.5) : tint
+            case .primary:
+                attributes[.foregroundColor] = dimmed ? NSColor.tertiaryLabelColor : NSColor.labelColor
+            case .secondary:
+                attributes[.foregroundColor] = NSColor.secondaryLabelColor
+            case .chip:
+                attributes[.foregroundColor] = dimmed ? NSColor.tertiaryLabelColor : NSColor.labelColor
+                attributes[.backgroundColor] = dimmed ? chipFill.withAlphaComponent(0.5) : chipFill
+            case .badge:
+                attributes[.font] = badgeFont
+                attributes[.foregroundColor] = dimmed ? badgeText.withAlphaComponent(0.5) : badgeText
+                attributes[.backgroundColor] = dimmed ? badgeFill.withAlphaComponent(0.5) : badgeFill
+            case .targets:
+                attributes[.foregroundColor] = dimmed
+                    ? NSColor.systemPurple.withAlphaComponent(0.5)
+                    : NSColor.systemPurple
+            case .duration:
+                attributes[.font] = durationFont
+                attributes[.foregroundColor] = NSColor.secondaryLabelColor
+            }
+
+            let body = segment.style == .badge
+                ? badgePadding + segment.text + badgePadding
+                : segment.text
+            text.append(NSAttributedString(string: singleLine(body), attributes: attributes))
         }
 
         return text
@@ -185,14 +249,6 @@ public enum NodeStyling {
     }
 
     public static func formatDuration(milliseconds: Double) -> String {
-        if milliseconds >= 60_000 {
-            let minutes = Int(milliseconds / 60_000)
-            let seconds = (milliseconds - Double(minutes) * 60_000) / 1000
-            return String(format: "%d:%06.3f", minutes, seconds)
-        }
-        if milliseconds >= 1000 {
-            return String(format: "%.3f s", milliseconds / 1000)
-        }
-        return String(format: "%.0f ms", milliseconds)
+        NodeRowText.formatDuration(milliseconds: milliseconds)
     }
 }

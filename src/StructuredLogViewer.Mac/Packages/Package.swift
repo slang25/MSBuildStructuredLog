@@ -23,10 +23,14 @@ let package = Package(
     ],
     targets: [
         .systemLibrary(name: "CMSLog", path: "Sources/CMSLog"),
+        // Link-time no-ops for the C ABI, so ViewerUI can be unit-tested
+        // without the NativeAOT dylib. Test-only; never in the app.
+        .target(name: "CMSLogStub"),
         .target(name: "ViewerCore"),
         .target(name: "BinlogKit", dependencies: ["CMSLog", "ViewerCore"]),
         .target(name: "ViewerUI", dependencies: ["ViewerCore", "BinlogKit"]),
         .testTarget(name: "ViewerCoreTests", dependencies: ["ViewerCore"]),
+        .testTarget(name: "ViewerUITests", dependencies: ["ViewerUI", "ViewerCore", "CMSLogStub"]),
     ],
     swiftLanguageModes: [.v5]
 )

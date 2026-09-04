@@ -19,8 +19,10 @@ public enum SemanticNavigation: Equatable, Sendable {
 /// engine. Only symbol resolution (`$(Prop)`, `@(Item)`, target names) needs a
 /// round trip, because those answers are unbounded and evaluation-scoped.
 public struct SourceSemanticIndex: Sendable, Equatable {
-    /// Navigable spans, sorted by start offset. Import tokens with no
-    /// recorded edge are dropped, so an underline always means something.
+    /// Spans the editor tracks, sorted by start offset. Import tokens the
+    /// build never mentioned are dropped; a token it recorded as *skipped*
+    /// is kept so it can explain itself on hover, but `isNavigable` reports
+    /// false for it, so an underline still always means something.
     public let tokens: [MSBuildToken]
 
     public let file: SemanticFile
@@ -30,6 +32,8 @@ public struct SourceSemanticIndex: Sendable, Equatable {
     /// Imports the build reported with no line number — the expansion of an
     /// `Sdk="..."` attribute, which has no `<Import>` element to point at.
     private let implicitImports: [SemanticImport]
+
+    private let skippedByLine: [Int: [SemanticSkippedImport]]
 
     public var evaluationId: String? { file.evaluationId }
 
@@ -48,17 +52,55 @@ public struct SourceSemanticIndex: Sendable, Equatable {
         self.importsByLine = byLine
         self.implicitImports = implicit
 
+        var skipped: [Int: [SemanticSkippedImport]] = [:]
+        for edge in file.skippedImports ?? [] where edge.line > 0 {
+            skipped[edge.line, default: []].append(edge)
+        }
+        self.skippedByLine = skipped
+
         let scanned = MSBuildTokenizer.tokenize(text)
         self.tokens = scanned.filter { token in
             switch token.kind {
+            // A skipped import keeps its token: there is nothing to follow,
+            // but hovering it is the only way to learn why the build ignored
+            // the line you are looking at.
             case .importPath:
-                return byLine[token.line] != nil
+                return byLine[token.line] != nil || skipped[token.line] != nil
             case .sdkReference:
-                return byLine[token.line] != nil || !implicit.isEmpty
+                return byLine[token.line] != nil || skipped[token.line] != nil || !implicit.isEmpty
             default:
                 return true
             }
         }
+    }
+
+    /// Whether Cmd-clicking a token can go anywhere. False for an import
+    /// the build recorded only as skipped — there is no destination, so the
+    /// editor must not offer the link affordance.
+    public func isNavigable(_ token: MSBuildToken) -> Bool {
+        switch token.kind {
+        case .importPath:
+            return importsByLine[token.line] != nil
+        case .sdkReference:
+            return importsByLine[token.line] != nil || !implicitImports.isEmpty
+        default:
+            return true
+        }
+    }
+
+    /// The skipped-import records anchored to a token's line, if any. A line
+    /// can carry several: `<Import Project="a;b" />` skips each separately.
+    public func skippedImports(for token: MSBuildToken) -> [SemanticSkippedImport] {
+        guard token.kind == .importPath || token.kind == .sdkReference else { return [] }
+        return skippedByLine[token.line] ?? []
+    }
+
+    /// Every skipped import in the file, in source order. Drives the
+    /// end-of-element condition annotations in the editor.
+    public var skippedImports: [SemanticSkippedImport] {
+        (file.skippedImports ?? [])
+            .filter { $0.line > 0 }
+            .sorted { ($0.line, $0.column) < ($1.line, $1.column) }
     }
 
     /// The token containing `offset`, if any.
@@ -108,6 +150,12 @@ public struct SourceSemanticIndex: Sendable, Equatable {
 
         let reachable = locations.filter { $0.available != false }
         if reachable.isEmpty {
+            // Nothing to follow, but a recorded skip says why — far better
+            // than "not recorded in the build".
+            if let skipped = skippedByLine[token.line]?.first {
+                return .none(reason: skipped.explanation)
+            }
+
             return .none(reason: locations.isEmpty
                 ? "This import was not recorded in the build."
                 : "'\(locations[0].detail ?? "")' is not embedded in this binlog.")

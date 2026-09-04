@@ -46,6 +46,67 @@ public struct SemanticImport: Codable, Sendable, Equatable {
     }
 }
 
+/// An `<Import>` element the build evaluated and declined to follow.
+/// Anchored to the same 1-based coordinates as `SemanticImport`, so the two
+/// join against the tokenizer's spans the same way.
+public struct SemanticSkippedImport: Codable, Sendable, Equatable {
+    public var line: Int
+    public var column: Int
+
+    /// The `Project` attribute as logged — usually still unexpanded, e.g.
+    /// `$(CustomBeforeDirectoryBuildProps)`.
+    public var fileSpec: String?
+
+    /// Prose reason, e.g. "Not imported due to no matching files".
+    public var reason: String?
+
+    /// The `Condition` attribute, when a false condition is why it was
+    /// skipped. Nil for a missing file, an empty expression or an
+    /// unresolved SDK — `reason` covers those.
+    public var condition: String?
+
+    /// What `condition` expanded to at the moment MSBuild evaluated it,
+    /// e.g. `'' != ''`. Set together with `condition`.
+    public var evaluatedCondition: String?
+
+    public init(
+        line: Int,
+        column: Int = 0,
+        fileSpec: String? = nil,
+        reason: String? = nil,
+        condition: String? = nil,
+        evaluatedCondition: String? = nil
+    ) {
+        self.line = line
+        self.column = column
+        self.fileSpec = fileSpec
+        self.reason = reason
+        self.condition = condition
+        self.evaluatedCondition = evaluatedCondition
+    }
+
+    /// True when MSBuild told us the condition and what it expanded to.
+    public var hasCondition: Bool { condition != nil && evaluatedCondition != nil }
+
+    /// The full explanation, for quick info and error text.
+    public var explanation: String {
+        guard let condition, let evaluatedCondition else {
+            return reason ?? "Not imported."
+        }
+        return "Condition \(condition) evaluated as \(evaluatedCondition) → false"
+    }
+
+    /// The terse form for an end-of-element annotation in the editor. The
+    /// condition itself is already on screen — what's missing is what it
+    /// expanded to, so only that and the verdict are worth the pixels.
+    public var annotation: String {
+        guard let evaluatedCondition else {
+            return reason ?? "Not imported."
+        }
+        return "\(evaluatedCondition) → false"
+    }
+}
+
 public struct SemanticTargetDefinition: Codable, Sendable, Equatable {
     public var name: String
     public var line: Int
@@ -69,6 +130,10 @@ public struct SemanticFile: Codable, Sendable, Equatable {
     public var contextsTotal: Int?
 
     public var imports: [SemanticImport]?
+
+    /// Imports in this file the build evaluated and declined.
+    public var skippedImports: [SemanticSkippedImport]?
+
     public var targets: [SemanticTargetDefinition]?
 
     public init(
@@ -77,6 +142,7 @@ public struct SemanticFile: Codable, Sendable, Equatable {
         contexts: [SemanticContext]? = nil,
         contextsTotal: Int? = nil,
         imports: [SemanticImport]? = nil,
+        skippedImports: [SemanticSkippedImport]? = nil,
         targets: [SemanticTargetDefinition]? = nil
     ) {
         self.path = path
@@ -84,6 +150,7 @@ public struct SemanticFile: Codable, Sendable, Equatable {
         self.contexts = contexts
         self.contextsTotal = contextsTotal
         self.imports = imports
+        self.skippedImports = skippedImports
         self.targets = targets
     }
 }

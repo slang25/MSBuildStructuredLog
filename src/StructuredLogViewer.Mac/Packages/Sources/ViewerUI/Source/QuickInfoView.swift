@@ -35,6 +35,8 @@ struct QuickInfoView: View {
                 symbolBody(symbol)
             case .imports(let locations):
                 importsBody(locations)
+            case .skippedImports(let skipped):
+                skippedImportsBody(skipped)
             case .unavailable(let reason):
                 Text(reason)
                     .font(.callout)
@@ -102,6 +104,61 @@ struct QuickInfoView: View {
             title: locations.count == 1 ? "Imports" : "Imports \(locations.count) files",
             locations: locations)
         hint
+    }
+
+    /// An import the build evaluated and declined. The condition and what it
+    /// expanded to are the whole answer, so they lead; the prose reason is
+    /// the fallback for skips MSBuild reports without one (missing file, no
+    /// matches, unresolved SDK).
+    @ViewBuilder
+    private func skippedImportsBody(_ skipped: [SemanticSkippedImport]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Not imported", systemImage: "arrow.down.doc")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            ForEach(Array(skipped.enumerated()), id: \.offset) { _, record in
+                if record.hasCondition {
+                    Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 4) {
+                        GridRow {
+                            Text("Condition")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .gridColumnAlignment(.trailing)
+                                .fixedSize()
+                            wrapped(record.condition ?? "")
+                        }
+                        GridRow {
+                            Text("Evaluated")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .gridColumnAlignment(.trailing)
+                                .fixedSize()
+                            wrapped(record.evaluatedCondition ?? "")
+                        }
+                        GridRow {
+                            Text("Result")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .gridColumnAlignment(.trailing)
+                                .fixedSize()
+                            Text("false")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.orange)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                } else if let reason = record.reason {
+                    wrapped(reason, secondary: true)
+                }
+            }
+
+            // This is the only condition evaluation a binlog contains, so
+            // it's worth saying that the answer is the build's, not a guess.
+            Text("As evaluated during the build.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
     }
 
     private var hint: some View {
