@@ -8,6 +8,7 @@
     <MSBuildPackageVersion>17.5.0</MSBuildPackageVersion>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="GPUI.NET" Version="0.2.0-preview.1" />
     <PackageVersion Include="AdonisUI" Version="1.17.1" />
     <PackageVersion Include="AdonisUI.ClassicTheme" Version="1.17.1" />
     <PackageVersion Include="AutomaticGraphLayout.Drawing" Version="1.1.12" />
