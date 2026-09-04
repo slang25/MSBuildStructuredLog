@@ -100,7 +100,11 @@ int32_t mslog_build_info(int64_t handle, char **out_json, char **error_json);
 /* NodeDetails JSON: {node: NodeSummary, parentId, startTime, endTime,
  * fullText, sourceFile, sourceLine}. NodeSummary: {id, kind, title, name,
  * value, hasChildren, childCount, isLowRelevance, state, durationMs,
- * hasSource, canPreprocess, props{}}. */
+ * hasSource, canPreprocess, props{}}.
+ *
+ * props carries per-kind extras: Import and NoImport report line and column,
+ * and NoImport adds reason plus condition/evaluatedCondition when the skip
+ * was a false condition — what a tree row needs to render them in full. */
 int32_t mslog_node_get(int64_t handle,
                        const char *node_id,
                        char **out_json,
@@ -159,7 +163,9 @@ int32_t mslog_target_parent(int64_t handle,
 
 /* SemanticFile JSON: {path, evaluationId, contextsTotal, contexts:
  * [{evaluationId, projectFile, label, isProjectFile}], imports: [{line,
- * column, importedPath, available}], targets: [{name, line}]}.
+ * column, importedPath, available}], skippedImports: [{line, column,
+ * fileSpec, reason, condition, evaluatedCondition}], targets:
+ * [{name, line}]}.
  *
  * MSBuild source files are not self-contained: the same Directory.Build.props
  * is imported by many projects and resolves differently in each, so every
@@ -169,7 +175,15 @@ int32_t mslog_target_parent(int64_t handle,
  * NULL to take the default context (the project itself, else the first
  * evaluation that imported the file); the chosen one comes back as
  * `evaluationId`. `imports` and `targets` are 1-based source locations in
- * this file, ready to turn into Cmd-click targets. */
+ * this file, ready to turn into Cmd-click targets.
+ *
+ * `skippedImports` are the Import elements MSBuild evaluated and declined,
+ * at the same 1-based coordinates. `condition`/`evaluatedCondition` are the
+ * Condition attribute and what it expanded to *at that moment* — present
+ * only for a false-condition skip, absent for a missing file, an empty
+ * expression or an unresolved SDK, where `reason` carries the prose. This
+ * is the only condition evaluation MSBuild records: there is no equivalent
+ * for a PropertyGroup, ItemGroup or Target condition. */
 int32_t mslog_semantic_file(int64_t handle,
                             const char *path,
                             const char *evaluation_id,

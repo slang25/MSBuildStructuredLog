@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace Microsoft.Build.Logging.StructuredLogger;
 
@@ -98,6 +98,31 @@ public sealed class SemanticImport
     public BaseNode Node { get; set; }
 }
 
+/// <summary>
+/// An <c>&lt;Import&gt;</c> element MSBuild evaluated but did not follow.
+/// </summary>
+public sealed class SemanticSkippedImport
+{
+    /// <summary>1-based location of the Import element in the containing file.</summary>
+    public int Line { get; set; }
+
+    public int Column { get; set; }
+
+    /// <summary>The Project attribute as logged — usually still unexpanded.</summary>
+    public string FileSpec { get; set; }
+
+    /// <summary>Prose reason, e.g. "Not imported due to no matching files".</summary>
+    public string Reason { get; set; }
+
+    /// <summary>The Condition attribute, when that is why it was skipped.</summary>
+    public string Condition { get; set; }
+
+    /// <summary>What <see cref="Condition"/> expanded to. Set with it.</summary>
+    public string EvaluatedCondition { get; set; }
+
+    public BaseNode Node { get; set; }
+}
+
 /// <summary>A <c>&lt;Target Name="..."&gt;</c> element found in a file.</summary>
 public sealed class SemanticTargetDefinition
 {
@@ -125,5 +150,9 @@ public sealed class SemanticFile
     public int ContextsTotal { get; set; }
 
     public List<SemanticImport> Imports { get; } = new List<SemanticImport>();
+
+    /// <summary>Imports in this file that the build evaluated and declined.</summary>
+    public List<SemanticSkippedImport> SkippedImports { get; } = new List<SemanticSkippedImport>();
+
     public List<SemanticTargetDefinition> Targets { get; } = new List<SemanticTargetDefinition>();
 }

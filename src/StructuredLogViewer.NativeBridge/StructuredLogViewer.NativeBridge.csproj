@@ -26,6 +26,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The GPUI spike hosts the bridge in-process (no C ABI, no JSON). -->
+    <InternalsVisibleTo Include="StructuredLogViewer.Gpui" />
+    <!-- The browser-wasm engine (src/StructuredLogViewer.Web/engine) reuses the bridge classes behind a JSExport dispatcher. -->
+    <InternalsVisibleTo Include="StructuredLogViewer.WebEngine" />
+  </ItemGroup>
+
+  <ItemGroup>
     <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
   </ItemGroup>
 

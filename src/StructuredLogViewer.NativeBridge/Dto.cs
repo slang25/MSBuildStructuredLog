@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace StructuredLogViewer.NativeBridge;
 
@@ -298,6 +298,29 @@ public sealed class SemanticImportDto
     public bool Available { get; set; }
 }
 
+/// <summary>
+/// An Import element the build evaluated and declined to follow.
+/// </summary>
+public sealed class SemanticSkippedImportDto
+{
+    /// <summary>1-based location of the Import element in the viewed file.</summary>
+    public int Line { get; set; }
+
+    public int Column { get; set; }
+
+    /// <summary>The Project attribute as logged — usually still unexpanded.</summary>
+    public string FileSpec { get; set; }
+
+    /// <summary>Prose reason, e.g. "Not imported due to no matching files".</summary>
+    public string Reason { get; set; }
+
+    /// <summary>The Condition attribute, when that is why it was skipped.</summary>
+    public string Condition { get; set; }
+
+    /// <summary>What Condition expanded to, e.g. "'' != ''". Set with it.</summary>
+    public string EvaluatedCondition { get; set; }
+}
+
 public sealed class SemanticTargetDefinitionDto
 {
     public string Name { get; set; }
@@ -319,6 +342,10 @@ public sealed class SemanticFileDto
     public int ContextsTotal { get; set; }
 
     public List<SemanticImportDto> Imports { get; set; }
+
+    /// <summary>Imports in this file the build evaluated and declined.</summary>
+    public List<SemanticSkippedImportDto> SkippedImports { get; set; }
+
     public List<SemanticTargetDefinitionDto> Targets { get; set; }
 }
 

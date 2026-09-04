@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -55,8 +55,8 @@ public sealed class MSBuildSemanticModel
 
     /// <summary>
     /// File-scoped facts for <paramref name="filePath"/>: the evaluations it
-    /// participated in, plus the import edges and target definitions it
-    /// contains under <paramref name="evaluation"/>. Pass a null evaluation
+    /// participated in, plus the import edges (taken and skipped) and target
+    /// definitions it contains under <paramref name="evaluation"/>. Pass a null evaluation
     /// to take the default (the project itself, else the first evaluation
     /// that imported the file).
     /// </summary>
@@ -111,6 +111,25 @@ public sealed class MSBuildSemanticModel
                 Column = import.Column,
                 ImportedFilePath = import.ImportedProjectFilePath,
                 Node = import
+            });
+        }
+
+        foreach (var noImport in selected.GetAllNoImportsTransitive())
+        {
+            if (!string.Equals(noImport.ProjectFilePath, filePath, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            result.SkippedImports.Add(new SemanticSkippedImport
+            {
+                Line = noImport.Line,
+                Column = noImport.Column,
+                FileSpec = noImport.Text,
+                Reason = noImport.Reason,
+                Condition = noImport.Condition,
+                EvaluatedCondition = noImport.EvaluatedCondition,
+                Node = noImport
             });
         }
 

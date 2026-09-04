@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using Microsoft.Build.Framework;
 using Microsoft.Build.Logging.StructuredLogger;
 using StructuredLogViewer;
 
@@ -70,7 +71,7 @@ internal static class NodeFormatter
             dto.CanPreprocess = true;
         }
 
-        dto.Props = GetProps(node);
+        dto.Props = GetProps(session, node);
         return dto;
     }
 
@@ -139,7 +140,7 @@ internal static class NodeFormatter
         };
     }
 
-    private static Dictionary<string, string> GetProps(BaseNode node)
+    private static Dictionary<string, string> GetProps(BridgeSession session, BaseNode node)
     {
         Dictionary<string, string> props = null;
 
@@ -160,10 +161,30 @@ internal static class NodeFormatter
                 Add("configuration", project.Configuration);
                 Add("platform", project.Platform);
                 Add("extension", project.ProjectFileExtension);
+                // Title glues these onto the name; carry them separately so a
+                // row can style each one. Adornment is not just
+                // targetFramework — it prefixes "TargetFrameworks: " for
+                // outer projects and can append configuration and platform.
+                Add("adornment", project.AdornmentString);
+                Add("targetsText", project.TargetsDisplayText);
+                // Never reaches the title at all: GetNodeText drops it for
+                // Project. It is the link from a project to its evaluation.
+                Add("evaluationText", project.EvaluationText);
+                // "id:42" is an MSBuild evaluation id, not a node id, so the
+                // destination has to be resolved here — the viewer can't
+                // derive it from the label.
+                if (project.EvaluationId != BuildEventContext.InvalidEvaluationId &&
+                    session.Build.FindEvaluation(project.EvaluationId) is { } projectEvaluation)
+                {
+                    Add("evaluationNodeId", BinlogMcp.NodeId.Get(projectEvaluation));
+                }
+
                 break;
             case ProjectEvaluation evaluation:
                 Add("projectFile", evaluation.ProjectFile);
                 Add("extension", evaluation.ProjectFileExtension);
+                Add("adornment", evaluation.AdornmentString);
+                Add("evaluationText", evaluation.EvaluationText);
                 break;
             case Task task:
                 Add("fromAssembly", task.FromAssembly);
@@ -193,6 +214,12 @@ internal static class NodeFormatter
                 Add("projectFilePath", noImport.ProjectFilePath);
                 Add("importedFileSpec", noImport.ImportedFileSpec);
                 Add("reason", noImport.Reason);
+                Add("line", noImport.Line.ToString(CultureInfo.InvariantCulture));
+                Add("column", noImport.Column.ToString(CultureInfo.InvariantCulture));
+                // Set only for a false-condition skip; Reason already folds
+                // them into prose, these are for callers that want the parts.
+                Add("condition", noImport.Condition);
+                Add("evaluatedCondition", noImport.EvaluatedCondition);
                 break;
             case Package package:
                 Add("version", package.Version);

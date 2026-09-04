@@ -133,6 +133,53 @@ namespace Microsoft.Build.Logging.StructuredLogger
         public IEnumerable<Import> GetAllImportsTransitive()
             => importsMap.Values;
 
+        /// <summary>
+        /// The Imports folder, or null when this evaluation logged no imports.
+        /// Unlike <see cref="ImportsFolder"/> this never creates the folder,
+        /// so read-only consumers don't mutate the tree they're inspecting.
+        /// </summary>
+        public TimedNode ExistingImportsFolder => importsFolder;
+
+        /// <summary>
+        /// Every import MSBuild declined to make, at any depth of the import
+        /// tree. <see cref="GetAllImportsTransitive"/> can't answer this: it
+        /// reads a map keyed by resolved file path, and a skipped import
+        /// never resolved to one.
+        /// </summary>
+        public IEnumerable<NoImport> GetAllNoImportsTransitive()
+        {
+            if (importsFolder == null)
+            {
+                yield break;
+            }
+
+            var stack = new Stack<TreeNode>();
+            stack.Push(importsFolder);
+
+            while (stack.Count > 0)
+            {
+                var current = stack.Pop();
+                if (!current.HasChildren)
+                {
+                    continue;
+                }
+
+                foreach (var child in current.Children)
+                {
+                    if (child is NoImport noImport)
+                    {
+                        yield return noImport;
+                    }
+
+                    // Imports nest their children; NoImports are always leaves.
+                    if (child is TreeNode branch)
+                    {
+                        stack.Push(branch);
+                    }
+                }
+            }
+        }
+
         public Dictionary<string, string> GetProperties()
         {
             var properties = new Dictionary<string, string>();

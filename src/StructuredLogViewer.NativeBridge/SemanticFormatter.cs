@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Microsoft.Build.Logging.StructuredLogger;
 
@@ -33,6 +33,7 @@ internal static class SemanticFormatter
             ContextsTotal = semantics.ContextsTotal,
             Contexts = new List<SemanticContextDto>(semantics.Contexts.Count),
             Imports = new List<SemanticImportDto>(semantics.Imports.Count),
+            SkippedImports = new List<SemanticSkippedImportDto>(semantics.SkippedImports.Count),
             Targets = new List<SemanticTargetDefinitionDto>(semantics.Targets.Count)
         };
 
@@ -55,6 +56,19 @@ internal static class SemanticFormatter
                 Column = import.Column,
                 ImportedPath = import.ImportedFilePath,
                 Available = resolver.HasFile(import.ImportedFilePath)
+            });
+        }
+
+        foreach (var skipped in semantics.SkippedImports)
+        {
+            dto.SkippedImports.Add(new SemanticSkippedImportDto
+            {
+                Line = skipped.Line,
+                Column = skipped.Column,
+                FileSpec = skipped.FileSpec,
+                Reason = skipped.Reason,
+                Condition = Shorten(skipped.Condition),
+                EvaluatedCondition = Shorten(skipped.EvaluatedCondition)
             });
         }
 
