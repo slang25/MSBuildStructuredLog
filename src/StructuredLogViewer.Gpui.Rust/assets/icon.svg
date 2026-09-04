@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  The viewer's brand mark, shared with the SwiftUI macOS app
-  (../StructuredLogViewer.Mac/scripts/generate-appicon.swift): a parent node
-  with a trunk down to two rows of children — the structured log tree.
+  The viewer's brand mark: a parent node with a trunk down to two rows of
+  children — the structured log tree.
 
   Authored full-bleed. Platform padding is the generator's job:
   `cargo run` the generate-icons example insets this for the macOS grid

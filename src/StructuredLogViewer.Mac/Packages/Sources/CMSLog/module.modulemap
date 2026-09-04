@@ -1,4 +1,0 @@
-module CMSLog {
-    header "../../../../StructuredLogViewer.NativeBridge/include/mslog.h"
-    export *
-}

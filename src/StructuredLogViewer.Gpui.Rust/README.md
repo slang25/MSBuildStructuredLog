@@ -165,9 +165,9 @@ occluded gpui window returns a stale frame, which looks exactly like a hang.
 
 ## Icons
 
-`assets/icon.svg` is the master: the same brand motif as the SwiftUI app
-(`../StructuredLogViewer.Mac/scripts/generate-appicon.swift`), authored
-full-bleed. There is no cross-platform icon *format* — every platform wants
+`assets/icon.svg` is the master: the project's brand mark — a parent node
+with a trunk down to two rows of children, the structured log tree —
+authored full-bleed. There is no cross-platform icon *format* — every platform wants
 its own container — so the portable part is that one file plus a generator:
 
 ```sh
