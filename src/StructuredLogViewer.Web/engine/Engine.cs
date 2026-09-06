@@ -163,7 +163,7 @@ public static partial class Engine
 
             case "build_stats":
             {
-                var stats = StatsFormatter.Calculate(Session, CancellationToken.None);
+                var stats = StatsFormatter.Calculate(Session.Path, CancellationToken.None);
                 return JsonSerializer.Serialize(stats, BridgeJsonContext.Default.StatsDto);
             }
 
