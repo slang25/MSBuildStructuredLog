@@ -279,7 +279,7 @@ Each result line is: 'kind summary [id]'")]
         int offset = Math.Max(skip ?? 0, 0);
 
         var entry = Cache.Load(path);
-        var contextNode = NodeId.Resolve(entry, contextId);
+        var contextNode = NodeId.Resolve(entry.IndexMap, contextId);
 
         if (contextNode is not TimedNode timedContext || contextNode is not IProjectOrEvaluation)
         {

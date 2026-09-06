@@ -1,0 +1,5 @@
+bin/
+obj/
+.sdk-manifests-pin/
+# the repo-root .gitignore excludes *.binlog; the sample must ship with test.html
+!wwwroot/sample.binlog

@@ -245,3 +245,6 @@ _Pvt_Extensions
 launchSettings.json
 
 *.binlog
+
+# macOS Finder
+.DS_Store

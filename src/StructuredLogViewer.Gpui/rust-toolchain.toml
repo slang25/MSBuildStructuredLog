@@ -1,0 +1,5 @@
+# Zed's gpui at the pinned rev needs this; rustup installs it for this
+# directory only and leaves the default toolchain alone.
+[toolchain]
+channel = "1.97.1"
+profile = "minimal"

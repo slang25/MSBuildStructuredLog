@@ -1,0 +1,4 @@
+module CMSLog {
+    header "mslog.h"
+    export *
+}

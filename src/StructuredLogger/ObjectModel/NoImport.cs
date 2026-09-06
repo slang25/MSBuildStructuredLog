@@ -5,6 +5,21 @@
         public string ProjectFilePath { get; set; }
         public string ImportedFileSpec { get; set; }
         public string Reason { get; set; }
+
+        /// <summary>
+        /// The import's Condition attribute as written, when MSBuild skipped
+        /// the import because the condition was false. Null for every other
+        /// skip reason (missing file, no matches, unresolved SDK).
+        /// </summary>
+        public string Condition { get; set; }
+
+        /// <summary>
+        /// What <see cref="Condition"/> expanded to at the moment MSBuild
+        /// evaluated it, e.g. <c>('' != '')</c>. Paired with
+        /// <see cref="Condition"/>: both are set or neither is.
+        /// </summary>
+        public string EvaluatedCondition { get; set; }
+
         public int Line { get; set; }
         public int Column { get; set; }
 

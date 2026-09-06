@@ -76,7 +76,14 @@ namespace Microsoft.Build.Logging.StructuredLogger
                             stringTable.SoftIntern(project),
                             line,
                             column,
-                            reason);
+                            reason)
+                        {
+                            // Reason folds these into prose for the tree row;
+                            // keep them apart as well so the source viewer can
+                            // annotate the Condition attribute it came from.
+                            Condition = stringTable.SoftIntern(condition),
+                            EvaluatedCondition = stringTable.SoftIntern(evaluatedCondition)
+                        };
                         return noImport;
                     }
                 }
@@ -170,10 +177,51 @@ namespace Microsoft.Build.Logging.StructuredLogger
                 reason = stringTable.SoftIntern("Not imported due to " + reason);
 
                 var noImport = new NoImport(project, importedProject, line, column, reason);
+
+                // Only the false-condition message carries these groups. The
+                // template's literal parens end up inside the captures, so
+                // peel them back off to match the argument-based path above.
+                var condition = match.Groups["Reason"];
+                var evaluated = match.Groups["Evaluated"];
+                if (condition.Success && evaluated.Success)
+                {
+                    noImport.Condition = stringTable.SoftIntern(TrimOuterParens(condition.Value));
+                    noImport.EvaluatedCondition = stringTable.SoftIntern(TrimOuterParens(evaluated.Value));
+                }
+
                 return noImport;
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Removes one balanced pair of enclosing parentheses, if present.
+        /// </summary>
+        private static string TrimOuterParens(string text)
+        {
+            text = text.Trim();
+            if (text.Length < 2 || text[0] != '(' || text[text.Length - 1] != ')')
+            {
+                return text;
+            }
+
+            // Only the outermost pair may be dropped: "(a) and (b)" opens and
+            // closes with parens that do not match each other.
+            int depth = 0;
+            for (int i = 0; i < text.Length - 1; i++)
+            {
+                if (text[i] == '(')
+                {
+                    depth++;
+                }
+                else if (text[i] == ')' && --depth == 0)
+                {
+                    return text;
+                }
+            }
+
+            return text.Substring(1, text.Length - 2).Trim();
         }
 
         private static readonly NumberFormatInfo currentNumberFormatInfo = NumberFormatInfo.CurrentInfo;

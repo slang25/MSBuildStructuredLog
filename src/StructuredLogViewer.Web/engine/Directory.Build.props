@@ -1,0 +1,4 @@
+<Project>
+  <!-- Intentionally empty: stops MSBuild from importing the repo-root Directory.Build.props for this project.
+       The referenced projects under src/ still pick up the repo-root props/CPM from their own directories. -->
+</Project>
