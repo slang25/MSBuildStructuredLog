@@ -7,7 +7,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# --- toolchain pins (copied from spikes/dotnet-wasm-direct-interop/run.sh) -----------------------
+# --- toolchain pins (worked out in the wasm interop spike, deleted; see b57babb3) ----------------
 # The dotnet on PATH is a dotnetup install with no workloads; this root has SDK 10.0.203 + wasm-tools.
 DOTNET_HOME="${DOTNET_HOME:-/usr/local/share/dotnet}"
 DOTNET="$DOTNET_HOME/dotnet"

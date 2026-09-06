@@ -46,7 +46,8 @@ src/StructuredLogViewer.Web/engine/bin/Release/net10.0/publish/wwwroot/
 To serve without build.sh: `python3 serve.py bin/Release/net10.0/publish/wwwroot 8940`
 (or `python3 -m http.server` from that directory; it also sends `application/wasm`).
 
-What `build.sh` pins (copied from `spikes/dotnet-wasm-direct-interop/run.sh`; see its FINDINGS.md):
+What `build.sh` pins (worked out in the `spikes/dotnet-wasm-direct-interop` feasibility spike; that
+directory is gone, but its `run.sh` and `FINDINGS.md` are in history at `b57babb3`):
 
 * `DOTNET_ROOT=/usr/local/share/dotnet` (the `dotnet` on PATH is a dotnetup install with no workloads).
 * `global.json` here pins SDK `10.0.203` (`rollForward: latestPatch`, no prerelease) because the repo-root

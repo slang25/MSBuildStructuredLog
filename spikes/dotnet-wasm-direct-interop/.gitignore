@@ -1,7 +1,0 @@
-bin/
-obj/
-spike-rs/target/
-spike-rs/out/
-.sdk-manifests-pin/
-.size-probe/
-.serve.log

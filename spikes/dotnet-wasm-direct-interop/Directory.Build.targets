@@ -1,3 +1,0 @@
-<Project>
-  <!-- Intentionally empty: stops MSBuild from importing the repo-root Directory.Build.targets. -->
-</Project>
