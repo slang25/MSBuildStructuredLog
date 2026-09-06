@@ -16,10 +16,15 @@ pub use native::{Engine, Host, OpenSource};
 #[cfg(target_family = "wasm")]
 pub use web::{Host, OpenSource, WorkerClient};
 
+/// Operation ids live in one process-wide table inside the bridge, so they
+/// have to be unique across sessions too: a search left running against a
+/// build that is being replaced must not cancel an operation belonging to
+/// its successor.
+static NEXT_OP: AtomicI64 = AtomicI64::new(1);
+
 /// One open build, shared by every view as `Arc<Session>`.
 pub struct Session {
     backend: Backend,
-    next_op: AtomicI64,
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -38,11 +43,18 @@ impl Session {
     /// `progress` from wherever the engine runs.
     pub async fn open(host: Host, source: OpenSource, progress: Arc<AtomicU64>) -> Result<Session> {
         let backend = Backend::open(host, source, progress).await?;
-        Ok(Session { backend, next_op: AtomicI64::new(1) })
+        Ok(Session { backend })
+    }
+
+    /// Releases the build the engine is holding. Native sessions also close
+    /// when the last `Arc` drops; the worker has no drop hook, so the web
+    /// backend has to be told.
+    pub async fn close(&self) {
+        self.backend.close().await;
     }
 
     pub fn allocate_op(&self) -> i64 {
-        self.next_op.fetch_add(1, Ordering::Relaxed)
+        NEXT_OP.fetch_add(1, Ordering::Relaxed)
     }
 
     pub fn cancel(&self, op_id: i64) {
@@ -303,13 +315,19 @@ mod native {
     pub struct NativeSession {
         engine: Arc<Engine>,
         handle: i64,
+        executor: gpui::BackgroundExecutor,
     }
 
     unsafe impl Send for NativeSession {}
     unsafe impl Sync for NativeSession {}
 
     impl NativeSession {
-        fn open(engine: Arc<Engine>, path: &Path, progress: Arc<AtomicU64>) -> Result<NativeSession> {
+        fn open(
+            engine: Arc<Engine>,
+            path: &Path,
+            progress: Arc<AtomicU64>,
+            executor: gpui::BackgroundExecutor,
+        ) -> Result<NativeSession> {
             unsafe extern "C" fn trampoline(ctx: *mut c_void, ratio: f64) {
                 // SAFETY: ctx is the Arc<AtomicU64> below, alive for the whole call.
                 let sink = unsafe { &*(ctx as *const AtomicU64) };
@@ -324,7 +342,7 @@ mod native {
             if status != 0 {
                 return Err(engine.error(status, err));
             }
-            Ok(NativeSession { engine, handle })
+            Ok(NativeSession { engine, handle, executor })
         }
 
         fn text(&self, id: &str, f: unsafe extern "C" fn(i64, *const c_char, OutStr, OutStr) -> i32) -> Result<String> {
@@ -340,12 +358,23 @@ mod native {
 
     impl Drop for NativeSession {
         fn drop(&mut self) {
-            let mut err: *mut c_char = std::ptr::null_mut();
-            // SAFETY: closing blocks until in-flight calls drain.
-            let status = unsafe { (self.engine.f.mslog_build_close)(self.handle, &mut err) };
-            if status != 0 {
-                let _ = self.engine.error(status, err);
-            }
+            // mslog_build_close waits for in-flight calls to drain and then
+            // forces two compacting collections — seconds on a large log.
+            // The last Arc<Session> is normally released on the foreground
+            // thread (closing a build, or opening the next one), so hand the
+            // teardown to the background rather than freezing the window.
+            let engine = self.engine.clone();
+            let handle = self.handle;
+            self.executor
+                .spawn(async move {
+                    let mut err: *mut c_char = std::ptr::null_mut();
+                    // SAFETY: closing blocks until in-flight calls drain.
+                    let status = unsafe { (engine.f.mslog_build_close)(handle, &mut err) };
+                    if status != 0 {
+                        let _ = engine.error(status, err);
+                    }
+                })
+                .detach();
         }
     }
 
@@ -372,9 +401,18 @@ mod native {
         pub(super) async fn open(host: Host, source: OpenSource, progress: Arc<AtomicU64>) -> Result<Backend> {
             let OpenSource::Path(path) = source;
             let engine = host.engine.clone();
-            let native = host.executor.spawn(async move { NativeSession::open(engine, &path, progress) }).await?;
+            let executor = host.executor.clone();
+            let native = host
+                .executor
+                .spawn(async move { NativeSession::open(engine, &path, progress, executor) })
+                .await?;
             Ok(Backend { native: Arc::new(native), executor: host.executor })
         }
+
+        /// Nothing to do: the handle is closed when the last reference to
+        /// `NativeSession` drops, which is what actually knows that no view
+        /// is still calling into it.
+        pub(super) async fn close(&self) {}
 
         pub(super) fn cancel(&self, op_id: i64) {
             self.native.engine.cancel(op_id);
@@ -541,7 +579,14 @@ mod web {
         next_id: Cell<u64>,
         ready: Cell<bool>,
         ready_waiters: RefCell<Vec<oneshot::Sender<()>>>,
-        progress: RefCell<Option<Arc<AtomicU64>>>,
+        /// Progress sinks by request id. `open` is the only method that
+        /// reports progress, and the worker tags each event with the request
+        /// it belongs to, so a second open cannot report into the first
+        /// one's sink.
+        progress: RefCell<HashMap<u64, Arc<AtomicU64>>>,
+        /// Set when the worker fails to boot the .NET runtime, or the Worker
+        /// itself errors. Once set, every call fails instead of hanging.
+        boot_error: RefCell<Option<String>>,
     }
 
     /// The page-side end of `engine-worker.js`. Protocol: requests are
@@ -551,6 +596,7 @@ mod web {
         worker: Worker,
         state: Rc<State>,
         _onmessage: Closure<dyn FnMut(MessageEvent)>,
+        _onerror: Closure<dyn FnMut(web_sys::Event)>,
     }
 
     impl WorkerClient {
@@ -564,7 +610,8 @@ mod web {
                 next_id: Cell::new(1),
                 ready: Cell::new(false),
                 ready_waiters: RefCell::new(Vec::new()),
-                progress: RefCell::new(None),
+                progress: RefCell::new(HashMap::new()),
+                boot_error: RefCell::new(None),
             });
             let onmessage = {
                 let state = state.clone();
@@ -573,26 +620,75 @@ mod web {
                 }) as Box<dyn FnMut(MessageEvent)>)
             };
             worker.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
-            Ok(Rc::new(WorkerClient { worker, state, _onmessage: onmessage }))
+            let onerror = {
+                let state = state.clone();
+                Closure::wrap(Box::new(move |event: web_sys::Event| {
+                    let message = event
+                        .dyn_ref::<web_sys::ErrorEvent>()
+                        .map(|e| e.message())
+                        .filter(|m| !m.is_empty())
+                        .unwrap_or_else(|| "the engine worker failed to load".to_string());
+                    State::fail_boot(&state, message);
+                }) as Box<dyn FnMut(web_sys::Event)>)
+            };
+            worker.set_onerror(Some(onerror.as_ref().unchecked_ref()));
+            Ok(Rc::new(WorkerClient { worker, state, _onmessage: onmessage, _onerror: onerror }))
         }
 
-        /// Resolves once the .NET runtime in the worker has booted.
-        pub async fn ready(&self) {
+        /// Resolves once the .NET runtime in the worker has booted, or fails
+        /// if it never will.
+        pub async fn ready(&self) -> Result<()> {
+            if let Some(message) = self.boot_error() {
+                return Err(anyhow!("{message}"));
+            }
             if self.state.ready.get() {
-                return;
+                return Ok(());
             }
             let (tx, rx) = oneshot::channel();
             self.state.ready_waiters.borrow_mut().push(tx);
             let _ = rx.await;
+            match self.boot_error() {
+                Some(message) => Err(anyhow!("{message}")),
+                None => Ok(()),
+            }
+        }
+
+        fn boot_error(&self) -> Option<String> {
+            self.state.boot_error.borrow().clone()
         }
 
         /// A JSON request; `extra` lets `open` attach a `File` to args.
         pub async fn call(&self, method: &str, args: Value, extra: Option<(&str, JsValue)>) -> Result<Value> {
-            self.ready().await;
+            self.request(method, args, extra, None).await
+        }
+
+        /// As `call`, but progress events for this request land in `sink`.
+        pub async fn call_with_progress(
+            &self,
+            method: &str,
+            args: Value,
+            extra: Option<(&str, JsValue)>,
+            sink: Arc<AtomicU64>,
+        ) -> Result<Value> {
+            self.request(method, args, extra, Some(sink)).await
+        }
+
+        async fn request(
+            &self,
+            method: &str,
+            args: Value,
+            extra: Option<(&str, JsValue)>,
+            sink: Option<Arc<AtomicU64>>,
+        ) -> Result<Value> {
+            self.ready().await?;
             let id = self.state.next_id.get();
             self.state.next_id.set(id + 1);
             let (tx, rx) = oneshot::channel();
             self.state.pending.borrow_mut().insert(id, tx);
+            if let Some(sink) = sink {
+                self.state.progress.borrow_mut().insert(id, sink);
+            }
+            let _sink_guard = SinkGuard { state: self.state.clone(), id };
 
             let message = JSON::parse(&json!({ "id": id, "method": method, "args": args }).to_string())
                 .map_err(|e| anyhow!("building request: {}", js_string(&e)))?;
@@ -606,12 +702,42 @@ mod web {
             rx.await.unwrap_or_else(|_| Err(anyhow!("engine worker dropped the request")))
         }
 
-        pub fn set_progress_sink(&self, sink: Option<Arc<AtomicU64>>) {
-            *self.state.progress.borrow_mut() = sink;
+    }
+
+    /// Drops this request's progress sink however `request` returns — reply,
+    /// error, or the caller dropping the future.
+    struct SinkGuard {
+        state: Rc<State>,
+        id: u64,
+    }
+
+    impl Drop for SinkGuard {
+        fn drop(&mut self) {
+            self.state.progress.borrow_mut().remove(&self.id);
+            self.state.pending.borrow_mut().remove(&self.id);
         }
     }
 
     impl State {
+        /// The worker will never serve a request. Unblock everyone waiting on
+        /// `ready`, fail everything already in flight, and make every later
+        /// call fail too — otherwise the viewer sits on a loading screen for
+        /// ever instead of showing the boot error.
+        fn fail_boot(state: &Rc<State>, message: String) {
+            if state.boot_error.borrow().is_some() {
+                return;
+            }
+            *state.boot_error.borrow_mut() = Some(message.clone());
+            state.ready.set(true);
+            for waiter in state.ready_waiters.borrow_mut().drain(..) {
+                let _ = waiter.send(());
+            }
+            let pending: Vec<_> = state.pending.borrow_mut().drain().collect();
+            for (_, tx) in pending {
+                let _ = tx.send(Err(anyhow!("{message}")));
+            }
+        }
+
         fn on_message(state: &Rc<State>, data: JsValue) {
             let text = match JSON::stringify(&data) {
                 Ok(s) => String::from(s),
@@ -627,9 +753,22 @@ mod web {
                         }
                     }
                     "progress" => {
-                        if let (Some(ratio), Some(sink)) = (value.get("ratio").and_then(Value::as_f64), state.progress.borrow().as_ref()) {
+                        // The worker tags progress with the open request it
+                        // belongs to; an untagged event is not ours to route.
+                        if let (Some(ratio), Some(id)) =
+                            (value.get("ratio").and_then(Value::as_f64), value.get("id").and_then(Value::as_u64))
+                            && let Some(sink) = state.progress.borrow().get(&id)
+                        {
                             sink.store(ratio.to_bits(), Ordering::Relaxed);
                         }
+                    }
+                    "error" => {
+                        let message = value
+                            .get("error")
+                            .and_then(|e| e.get("message"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("the engine worker failed to start");
+                        State::fail_boot(state, message.to_string());
                     }
                     _ => {}
                 }
@@ -675,14 +814,22 @@ mod web {
 
     impl Backend {
         pub(super) async fn open(host: Host, source: OpenSource, progress: Arc<AtomicU64>) -> Result<Backend> {
-            host.client.set_progress_sink(Some(progress));
-            let result = match source {
-                OpenSource::Url(url) => host.client.call("open", json!({ "url": url }), None).await,
-                OpenSource::File(file) => host.client.call("open", json!({}), Some(("file", file.into()))).await,
-            };
-            host.client.set_progress_sink(None);
-            result?;
+            match source {
+                OpenSource::Url(url) => {
+                    host.client.call_with_progress("open", json!({ "url": url }), None, progress).await
+                }
+                OpenSource::File(file) => {
+                    host.client.call_with_progress("open", json!({}), Some(("file", file.into())), progress).await
+                }
+            }?;
             Ok(Backend { client: host.client })
+        }
+
+        /// The worker holds the build graph and the staged binlog until it is
+        /// told to let go — there is no drop hook on the other side of the
+        /// message port, and the wasm heap is capped at 2 GB.
+        pub(super) async fn close(&self) {
+            let _ = self.client.call("close", json!({}), None).await;
         }
 
         pub(super) fn cancel(&self, _op_id: i64) {

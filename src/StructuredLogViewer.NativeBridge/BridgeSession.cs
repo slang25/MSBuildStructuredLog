@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -49,6 +49,12 @@ public sealed class BridgeSession
     public Build Build { get; init; }
     public long FileSize { get; init; }
 
+    // Reading and analyzing a build is not thread-safe: two loads running
+    // at once have crashed the process (see the gpui viewer's TESTING.md).
+    // The C ABI does not forbid concurrent mslog_build_open, so gate it here
+    // rather than trusting every caller to serialize.
+    private static readonly SemaphoreSlim LoadLock = new(1, 1);
+
     public static BridgeSession Load(string path, Progress progress, CancellationToken cancellationToken)
     {
         if (!System.IO.File.Exists(path))
@@ -63,29 +69,39 @@ public sealed class BridgeSession
             progress.CancellationToken = cancellationToken;
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        var build = Serialization.Read(path, progress);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        BuildAnalyzer.AnalyzeBuild(build);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        build.SearchIndex = new SearchIndex(build);
-
-        // Match the viewer: register the optional search extensions so
-        // queries like `$secret` and `$nuget` work out of the box.
-        build.SearchExtensions.Add(new SecretsSearch(build));
-        build.SearchExtensions.Add(new NuGetSearch(build));
-
-        cancellationToken.ThrowIfCancellationRequested();
-        AddNuGetNode(build);
-
-        return new BridgeSession
+        // Waits with the token, so a caller who cancels while queued behind
+        // another load bails instead of sitting through it.
+        LoadLock.Wait(cancellationToken);
+        try
         {
-            Path = path,
-            Build = build,
-            FileSize = fileSize
-        };
+            cancellationToken.ThrowIfCancellationRequested();
+            var build = Serialization.Read(path, progress);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            BuildAnalyzer.AnalyzeBuild(build);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            build.SearchIndex = new SearchIndex(build);
+
+            // Match the viewer: register the optional search extensions so
+            // queries like `$secret` and `$nuget` work out of the box.
+            build.SearchExtensions.Add(new SecretsSearch(build));
+            build.SearchExtensions.Add(new NuGetSearch(build));
+
+            cancellationToken.ThrowIfCancellationRequested();
+            AddNuGetNode(build);
+
+            return new BridgeSession
+            {
+                Path = path,
+                Build = build,
+                FileSize = fileSize
+            };
+        }
+        finally
+        {
+            LoadLock.Release();
+        }
     }
 
     /// <summary>

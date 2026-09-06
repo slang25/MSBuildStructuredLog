@@ -36,10 +36,12 @@
  * Threading: after open, node/file reads (node_get, node_children,
  *   node_ancestors, node_subtree_text, node_source, files_list,
  *   file_read) are lock-free and may run concurrently. Searches,
- *   properties-and-items, preprocess and stats are serialized per
- *   session internally (the engine's search index is not thread-safe).
- *   The progress callback fires on a background thread and must not
- *   call back into the library.
+ *   properties-and-items and preprocess are serialized per session
+ *   internally (the engine's search index is not thread-safe), and
+ *   mslog_build_open is serialized process-wide (reading and analyzing a
+ *   build is not thread-safe). Concurrent calls are therefore safe, but
+ *   two opens will queue rather than overlap. The progress callback fires
+ *   on a background thread and must not call back into the library.
  */
 
 #ifndef MSLOG_H
@@ -276,7 +278,11 @@ int32_t mslog_project_graph(int64_t handle,
 /* --- statistics --------------------------------------------------------- */
 
 /* Stats JSON mirroring the viewer's Statistics dialog (re-reads the file
- * from disk): sizes, counts and a recursive record-type breakdown. */
+ * from disk): sizes, counts and a recursive record-type breakdown.
+ * op_id is honoured only up to the point the re-read begins — the stats
+ * reader has no cancellation hook, so mslog_cancel after that has no
+ * effect. The session lease is released first, so a concurrent
+ * mslog_build_close is not held up by a stats call in flight. */
 int32_t mslog_build_stats(int64_t handle,
                           int64_t op_id,
                           char **out_json,

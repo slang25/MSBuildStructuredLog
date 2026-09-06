@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -628,10 +628,19 @@ public static unsafe class Exports
         Clear(errorJson);
         try
         {
-            using var lease = SessionTable.Rent(handle);
+            // Take the path under the lease and let it go again: the stats
+            // pass re-reads the file from disk and cannot be interrupted, so
+            // holding the lease across it would block mslog_build_close for
+            // the duration.
+            string path;
+            using (var lease = SessionTable.Rent(handle))
+            {
+                path = lease.Session.Path;
+            }
+
             using var operation = OperationRegistry.Begin(opId);
 
-            var stats = StatsFormatter.Calculate(lease.Session, operation.Token);
+            var stats = StatsFormatter.Calculate(path, operation.Token);
             return Ok(outJson, JsonSerializer.Serialize(stats, BridgeJsonContext.Default.StatsDto));
         }
         catch (Exception ex)

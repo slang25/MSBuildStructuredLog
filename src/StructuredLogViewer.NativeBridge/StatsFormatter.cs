@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading;
 using Microsoft.Build.Logging.StructuredLogger;
 
@@ -10,13 +10,14 @@ namespace StructuredLogViewer.NativeBridge;
 /// </summary>
 internal static class StatsFormatter
 {
-    public static StatsDto Calculate(BridgeSession session, CancellationToken cancellationToken)
+    public static StatsDto Calculate(string path, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // BinlogStats has no cancellation hooks; the check above at least
-        // lets an already-cancelled call bail before the expensive re-read.
-        var stats = BinlogStats.Calculate(session.Path);
+        // BinlogStats has no cancellation hooks, so this is the last point at
+        // which mslog_cancel can stop the call — mslog.h says as much. The
+        // caller drops its session lease first, so a close is not held up.
+        var stats = BinlogStats.Calculate(path);
 
         return new StatsDto
         {

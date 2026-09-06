@@ -1,20 +1,23 @@
 // The engine's only JavaScript: an ES-module Web Worker that boots the .NET runtime and forwards
 // {id, method, args} messages to the C# `Engine.Call(method, argsJson)` dispatcher.
 //   new Worker('./engine-worker.js', { type: 'module' })
-// Events posted to the page: {event:'ready'}, {event:'progress', ratio}, and replies
-// {id, ok:true, result} / {id, ok:false, error:{code, message}}.
+// Events posted to the page: {event:'ready'}, {event:'progress', ratio, id}, {event:'error', error}
+// on a boot failure, and replies {id, ok:true, result} / {id, ok:false, error:{code, message}}.
 import { dotnet } from './_framework/dotnet.js';
 
 const queue = [];
 let call = null;   // (method, argsJson) => string
 let fs = null;     // emscripten FS (Module.FS)
+// The id of the `open` currently inside the engine. Progress events carry it so the page can tell
+// which request they belong to — otherwise a second open reports into the first one's sink.
+let activeOpenId = null;
 
 self.onmessage = (e) => { call ? dispatch(e.data) : queue.push(e.data); };
 
 try {
     const runtime = await dotnet.withDiagnosticTracing(false).create();
     runtime.setModuleImports('engine-worker', {
-        progress: (ratio) => postMessage({ event: 'progress', ratio }),
+        progress: (ratio) => postMessage({ event: 'progress', ratio, id: activeOpenId }),
     });
     const exports = await runtime.getAssemblyExports(runtime.getConfig().mainAssemblyName);
     fs = runtime.Module.FS;
@@ -61,7 +64,13 @@ async function handle(msg) {
             args = { path: staged.path };
         }
         reachedEngine = true;
-        const result = JSON.parse(call(method, JSON.stringify(args)));
+        if (method === 'open') activeOpenId = id;
+        let result;
+        try {
+            result = JSON.parse(call(method, JSON.stringify(args)));
+        } finally {
+            if (method === 'open') activeOpenId = null;
+        }
         if (result && typeof result === 'object' && 'error' in result) {
             retire(method, staged, reachedEngine);
             postMessage({ id, ok: false, error: result.error });

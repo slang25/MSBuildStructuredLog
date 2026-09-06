@@ -610,6 +610,13 @@ impl Workspace {
 
     fn close_build(&mut self, _: &CloseBuild, _window: &mut Window, cx: &mut Context<Self>) {
         self.generation += 1;
+        // Dropping the phase is not enough on web: the worker has no drop
+        // hook, so without this it keeps the build graph and the staged
+        // binlog until another file is opened. Say it explicitly on both.
+        if let Phase::Loaded(loaded) = &self.phase {
+            let session = loaded.session.clone();
+            cx.spawn(async move |_, _| session.close().await).detach();
+        }
         self.phase = Phase::Welcome;
         cx.notify();
     }
