@@ -1,11 +1,11 @@
-# StructuredLogViewer.Gpui.Rust (spike)
+# StructuredLogViewer.Gpui (spike)
 
 The viewer front end written directly on Zed's [`gpui`](https://gpui.rs)
 crate, with the .NET engine behind `libmslog.dylib` — the same NativeAOT
-bridge the Swift macOS app talks to. Compared with the GPUI.NET spike in
-`../StructuredLogViewer.Gpui`, this has the whole framework available:
-system font and weights, `uniform_list`, custom `Element`s, native menus,
-file dialogs, clipboard, drag-and-drop, window appearance, key contexts.
+bridge the Swift macOS app talks to. Going straight to the Rust crate has
+the whole framework available: system font and weights, `uniform_list`,
+custom `Element`s, native menus, file dialogs, clipboard, drag-and-drop,
+window appearance, key contexts.
 
 ```
 Rust views (gpui: uniform_list tree, custom text input, dock-less split)

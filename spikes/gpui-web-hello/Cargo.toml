@@ -11,7 +11,7 @@ name = "gpui-web-hello"
 path = "src/main.rs"
 
 [dependencies]
-# Exact same gpui revision as src/StructuredLogViewer.Gpui.Rust.
+# Exact same gpui revision as src/StructuredLogViewer.Gpui.
 gpui = { git = "https://github.com/zed-industries/zed", rev = "f66ed399" }
 # Depend on gpui_web directly (not via gpui_platform) so we can turn off its
 # default `multithreaded` feature: that feature needs wasm atomics + shared

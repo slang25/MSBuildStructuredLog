@@ -7,7 +7,7 @@
 #   ./build.sh --ui-only    skip the .NET publish (reuse the last one)
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-UI="$HERE/../StructuredLogViewer.Gpui.Rust"
+UI="$HERE/../StructuredLogViewer.Gpui"
 DIST="$HERE/dist"
 PORT="${PORT:-8780}"
 

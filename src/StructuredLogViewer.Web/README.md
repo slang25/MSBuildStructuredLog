@@ -1,7 +1,7 @@
 # StructuredLogViewer.Web (spike)
 
 The gpui viewer in the browser, with the .NET engine running in a Web
-Worker. Same Rust UI as `../StructuredLogViewer.Gpui.Rust` (it is the same
+Worker. Same Rust UI as `../StructuredLogViewer.Gpui` (it is the same
 crate, compiled for `wasm32-unknown-unknown` with `gpui_web`), same engine
 as the Swift app and the native gpui app (`StructuredLogger` behind the
 bridge's `BridgeSession`/`NodeFormatter`/`SearchExecution`, compiled to
