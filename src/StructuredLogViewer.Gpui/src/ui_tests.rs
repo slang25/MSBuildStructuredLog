@@ -12,7 +12,9 @@ use crate::inspector::Inspector;
 use crate::source_view::SourceWell;
 use crate::theme::Theme;
 use crate::workspace::{Launch, Workspace};
-use gpui::{AppContext as _, Modifiers, TestAppContext, point, px};
+use gpui::{
+    AppContext as _, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, TestAppContext, point, px,
+};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
@@ -315,6 +317,91 @@ fn hiding_the_inspector_moves_focus_out_of_it(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn hiding_the_sidebar_moves_focus_out_of_it(cx: &mut TestAppContext) {
+    let _serial = serial();
+    let Some((workspace, cx)) = open_workspace(cx) else { return };
+    // Focus on the bare root, as right after launch.
+    workspace.update_in(cx, |workspace, window, cx| window.focus(&gpui::Focusable::focus_handle(workspace, cx), cx));
+    cx.simulate_keystrokes("cmd-f");
+    let state = workspace.update_in(cx, |w, window, cx| w.describe(window, cx));
+    assert_eq!(state["focus"], "search-input", "{state}");
+
+    cx.simulate_keystrokes("cmd-b");
+    let state = workspace.update_in(cx, |w, window, cx| w.describe(window, cx));
+    assert_eq!(state["sidebarVisible"], false, "{state}");
+    assert_ne!(state["focus"], "search-input", "focus must leave the hidden sidebar: {state}");
+
+    // And the shortcut keeps working from wherever focus went.
+    cx.simulate_keystrokes("cmd-b");
+    let state = workspace.update_in(cx, |w, window, cx| w.describe(window, cx));
+    assert_eq!(state["sidebarVisible"], true, "{state}");
+}
+
+#[gpui::test]
+fn asking_for_a_pane_brings_a_hidden_sidebar_back(cx: &mut TestAppContext) {
+    let _serial = serial();
+    let Some((workspace, cx)) = open_workspace(cx) else { return };
+    // Focus on the bare root, as right after launch.
+    workspace.update_in(cx, |workspace, window, cx| window.focus(&gpui::Focusable::focus_handle(workspace, cx), cx));
+    cx.simulate_keystrokes("cmd-b");
+    let state = workspace.update_in(cx, |w, window, cx| w.describe(window, cx));
+    assert_eq!(state["sidebarVisible"], false, "{state}");
+
+    cx.simulate_keystrokes("cmd-shift-p");
+    let state = workspace.update_in(cx, |w, window, cx| w.describe(window, cx));
+    assert_eq!(state["sidebarVisible"], true, "{state}");
+    assert_eq!(state["sidebar"], "tab-properties", "{state}");
+    assert_eq!(state["focus"], "properties-input", "{state}");
+}
+
+/// The mouse half of collapsing: double-click the divider, then drag the
+/// panel back out from the window edge.
+#[gpui::test]
+fn the_sidebar_divider_collapses_and_drags_back_out(cx: &mut TestAppContext) {
+    let _serial = serial();
+    let Some((workspace, cx)) = open_workspace(cx) else { return };
+    let divider = automation::bounds("divider-sidebar").expect("divider laid out");
+    double_click(cx, divider.center());
+    let state = workspace.update_in(cx, |w, window, cx| w.describe(window, cx));
+    assert_eq!(state["sidebarVisible"], false, "{state}");
+
+    // The divider stays put when the panel goes, which is what makes this
+    // recoverable with the mouse alone.
+    let divider = automation::bounds("divider-sidebar").expect("divider still laid out");
+    let from = divider.center();
+    let to = point(px(320.), from.y);
+    cx.simulate_event(MouseDownEvent {
+        position: from,
+        button: MouseButton::Left,
+        modifiers: Modifiers::default(),
+        click_count: 1,
+        first_mouse: false,
+    });
+    cx.simulate_event(MouseMoveEvent { position: to, pressed_button: Some(MouseButton::Left), modifiers: Modifiers::default() });
+    cx.simulate_event(MouseUpEvent { position: to, button: MouseButton::Left, modifiers: Modifiers::default(), click_count: 1 });
+    let state = workspace.update_in(cx, |w, window, cx| w.describe(window, cx));
+    assert_eq!(state["sidebarVisible"], true, "dragging out past the snap restores it: {state}");
+    let sidebar = automation::bounds("tab-search").expect("the sidebar is showing again");
+    assert!(sidebar.size.width > px(0.), "{sidebar:?}");
+}
+
+#[gpui::test]
+fn the_titlebar_buttons_collapse_both_panels(cx: &mut TestAppContext) {
+    let _serial = serial();
+    let Some((workspace, cx)) = open_workspace(cx) else { return };
+    for (id, key) in [("toggle-sidebar", "sidebarVisible"), ("toggle-inspector", "inspectorVisible")] {
+        let button = automation::bounds(id).unwrap_or_else(|| panic!("{id} laid out"));
+        cx.simulate_click(button.center(), Modifiers::default());
+        let state = workspace.update_in(cx, |w, window, cx| w.describe(window, cx));
+        assert_eq!(state[key], false, "{id}: {state}");
+        let button = automation::bounds(id).unwrap_or_else(|| panic!("{id} still laid out"));
+        cx.simulate_click(button.center(), Modifiers::default());
+        let state = workspace.update_in(cx, |w, window, cx| w.describe(window, cx));
+        assert_eq!(state[key], true, "{id}: {state}");
+    }
+}
+
+#[gpui::test]
 fn the_picker_menu_reveals_the_evaluation_in_the_tree(cx: &mut TestAppContext) {
     let _serial = serial();
     let Some((workspace, cx)) = open_workspace(cx) else { return };
@@ -351,4 +438,18 @@ fn the_picker_menu_reveals_the_evaluation_in_the_tree(cx: &mut TestAppContext) {
     let selected = tree["selected"].as_u64().map(|ix| tree["rows"][ix as usize]["id"].clone());
     assert_eq!(state["well"]["contextMenuOpen"], false, "{state}");
     assert_eq!(selected.as_ref().and_then(|v| v.as_str()), Some(evaluation.as_str()), "{tree}");
+}
+
+/// gpui's `simulate_click` only ever sends the first click of a series.
+fn double_click(cx: &mut gpui::VisualTestContext, position: gpui::Point<gpui::Pixels>) {
+    for click_count in [1, 2] {
+        cx.simulate_event(MouseDownEvent {
+            position,
+            button: MouseButton::Left,
+            modifiers: Modifiers::default(),
+            click_count,
+            first_mouse: false,
+        });
+        cx.simulate_event(MouseUpEvent { position, button: MouseButton::Left, modifiers: Modifiers::default(), click_count });
+    }
 }

@@ -94,7 +94,7 @@ fn main() {
     use std::path::PathBuf;
     use workspace::{
         CloseBuild, FocusSearch, FocusTree, OpenFile, ShowFavorites, ShowFiles, ShowFindInFiles,
-        ShowProperties, ShowTimeline, ShowTree, ToggleInspector,
+        ShowProperties, ShowTimeline, ShowTree, ToggleInspector, ToggleSidebar,
     };
 
     let mut launch = Launch::default();
@@ -146,6 +146,7 @@ fn main() {
                 MenuItem::action("Show Log Tree", ShowTree),
                 MenuItem::action("Show Timeline", ShowTimeline),
                 MenuItem::separator(),
+                MenuItem::action("Toggle Sidebar", ToggleSidebar),
                 MenuItem::action("Toggle Inspector", ToggleInspector),
             ]),
         ]);

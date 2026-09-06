@@ -46,13 +46,16 @@ exact shapes.
 Element ids come from `automation::probe(id)` children on interactive
 elements: `line-N`, `pill-N`, `source-tab-N`, `context-picker`,
 `context-N`, `find-prev`/`find-next`/`find-close`, `editor`, `tree-row-N`,
-`file-row-N`, `tab-search`/`tab-properties`/`tab-files`/…. Bounds are
+`file-row-N`, `tab-search`/`tab-properties`/`tab-files`/…,
+`toggle-sidebar`/`toggle-inspector` and their
+`divider-sidebar`/`divider-inspector`. Bounds are
 window-relative, refreshed on a fresh frame before every bounds-based
 command, and targets outside the viewport are refused.
 
 `dump` returns the workspace state: phase, keyboard focus (`editor`,
 `find-input`, `tree`, `search-input`, `files-filter`, `workspace`, …),
-sidebar tab, the source well
+sidebar tab, whether either side panel is showing
+(`sidebarVisible`/`inspectorVisible`), the source well
 (tabs, evaluation context, inlay and toggled-pill lines, find state,
 selection, popovers), the build tree's visible rows, both search panes,
 and the Files pane.

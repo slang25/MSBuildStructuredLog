@@ -108,6 +108,10 @@ bridge's `out/` folder in the source tree.
 - `workspace.rs` — transparent title bar with status pills and a Log /
   Timeline switch (⌘1/⌘2), sidebar | centre | well with draggable
   dividers, load/progress/failed states, ⌘O via the native open panel,
+  either side panel collapsing from the panel buttons at the ends of the
+  title bar, ⌘B / ⌘⌥I, or the divider itself (double-click it, or drag the
+  panel below its minimum width; the divider stays against the window edge
+  so a collapsed panel can be dragged back out),
   drop a `.binlog` on the window, and a double-click on the title bar doing
   whatever `AppleActionOnDoubleClick` says (`window.titlebar_double_click`).
   The error and warning pills run `$error` / `$warning` when there is
