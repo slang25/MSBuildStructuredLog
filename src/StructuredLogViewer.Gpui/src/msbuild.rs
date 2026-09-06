@@ -685,25 +685,60 @@ pub fn file_name(path: &str) -> String {
     path.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
 }
 
-// ----- inlays: end-of-element notes for skipped imports -----
+// ----- inlays: verdict badges for skipped imports -----
 
-/// Notes keyed by 0-based line, anchored to the element's closing `>`
-/// (several records can share one element: `Project="a;b"` skips twice).
-pub fn import_annotations(text: &str, skipped: &[SemanticSkippedImport]) -> HashMap<usize, String> {
-    let mut by_line: HashMap<usize, Vec<String>> = HashMap::new();
+/// A skipped `<Import>`'s verdict, positioned in its source line.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Inlay {
+    /// Byte offset within the line just after the Condition value's
+    /// closing quote, or after the tag's `>` when there is no single-line
+    /// Condition; where a chip goes when there is no value to wrap.
+    pub at: usize,
+    /// Byte range within the line of the Condition value (inside the
+    /// quotes), when there is one. The pill style wraps exactly this.
+    pub value: Option<Range<usize>>,
+    /// What the hover shows: the evaluated condition or the reason, one
+    /// per line when several records share the element.
+    pub detail: String,
+    /// The condition with its properties expanded, as MSBuild saw it.
+    pub evaluated: Option<String>,
+}
+
+/// Badges keyed by 0-based line (several records can share one element:
+/// `Project="a;b"` skips twice).
+pub fn import_inlays(text: &str, skipped: &[SemanticSkippedImport]) -> HashMap<usize, Inlay> {
+    let mut by_line: HashMap<usize, Inlay> = HashMap::new();
     let starts = line_starts(text);
     let b = text.as_bytes();
     for record in skipped.iter().filter(|r| r.line > 0) {
         let Some(start) = offset_for(record.line, record.column, &starts, b) else { continue };
-        let Some(anchor) = end_of_tag(b, start) else { continue };
+        let Some(open) = start_of_tag(b, start) else { continue };
+        let Some(close) = end_of_tag(b, open) else { continue };
+        let (anchor, value) = match attribute_value(b, open, close, b"Condition") {
+            // Only a value that stays on one line can be wrapped or trailed.
+            Some(v) if !b[v.clone()].contains(&b'\n') => (v.end + 1, Some(v)),
+            _ => (close, None),
+        };
         let line = line_at(anchor.saturating_sub(1), &starts).saturating_sub(1);
-        let notes = by_line.entry(line).or_default();
+        let line_start = starts[line];
         let note = record.annotation();
-        if !notes.contains(&note) {
-            notes.push(note);
+        let inlay = by_line.entry(line).or_insert_with(|| Inlay {
+            at: anchor - line_start,
+            value: value.map(|v| v.start - line_start..v.end - line_start),
+            detail: String::new(),
+            evaluated: None,
+        });
+        if inlay.evaluated.is_none() {
+            inlay.evaluated = record.evaluated_condition.clone();
+        }
+        if !inlay.detail.lines().any(|l| l == note) {
+            if !inlay.detail.is_empty() {
+                inlay.detail.push('\n');
+            }
+            inlay.detail.push_str(&note);
         }
     }
-    by_line.into_iter().map(|(line, notes)| (line, notes.join(" · "))).collect()
+    by_line
 }
 
 fn offset_for(line: usize, column: usize, starts: &[usize], b: &[u8]) -> Option<usize> {
@@ -719,7 +754,8 @@ fn offset_for(line: usize, column: usize, starts: &[usize], b: &[u8]) -> Option<
     Some(if candidate < line_end { candidate } else { start })
 }
 
-fn end_of_tag(b: &[u8], start: usize) -> Option<usize> {
+/// The `<` of the element that starts at or after `start` on its line.
+fn start_of_tag(b: &[u8], start: usize) -> Option<usize> {
     let mut i = start;
     while i < b.len() && b[i] != b'<' {
         if b[i] == b'\n' {
@@ -727,15 +763,18 @@ fn end_of_tag(b: &[u8], start: usize) -> Option<usize> {
         }
         i += 1;
     }
-    if i >= b.len() {
-        return None;
-    }
+    (i < b.len()).then_some(i)
+}
+
+/// One past the `>` that closes the tag opening at `open`, honouring quotes.
+fn end_of_tag(b: &[u8], open: usize) -> Option<usize> {
     let mut delimiter: Option<u8> = None;
+    let mut i = open;
     while i < b.len() {
         let c = b[i];
         match delimiter {
-            Some(open) => {
-                if c == open {
+            Some(quote) => {
+                if c == quote {
                     delimiter = None;
                 }
             }
@@ -746,6 +785,49 @@ fn end_of_tag(b: &[u8], start: usize) -> Option<usize> {
                     return Some(i + 1);
                 }
             }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// The byte range inside the quotes of `name="..."` within a tag, if the
+/// attribute is present.
+fn attribute_value(b: &[u8], open: usize, close: usize, name: &[u8]) -> Option<Range<usize>> {
+    let mut i = open;
+    let mut delimiter: Option<u8> = None;
+    while i < close {
+        let c = b[i];
+        match delimiter {
+            Some(quote) => {
+                if c == quote {
+                    delimiter = None;
+                }
+            }
+            None if c == b'"' || c == b'\'' => delimiter = Some(c),
+            None if b[i..].starts_with(name)
+                && i > open
+                && b[i - 1].is_ascii_whitespace()
+                && b.get(i + name.len()).is_some_and(|c| c.is_ascii_whitespace() || *c == b'=') =>
+            {
+                let mut j = i + name.len();
+                while j < close && b[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                if j >= close || b[j] != b'=' {
+                    i += 1;
+                    continue;
+                }
+                j += 1;
+                while j < close && b[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                let quote = *b.get(j).filter(|c| **c == b'"' || **c == b'\'')?;
+                let start = j + 1;
+                let end = b[start..close].iter().position(|c| *c == quote)? + start;
+                return Some(start..end);
+            }
+            None => {}
         }
         i += 1;
     }
@@ -812,7 +894,7 @@ mod tests {
     }
 
     #[test]
-    fn anchors_skipped_import_notes_to_the_element_line() {
+    fn anchors_skipped_import_badges_after_the_condition_value() {
         let skipped = vec![SemanticSkippedImport {
             line: 5,
             column: 3,
@@ -821,8 +903,32 @@ mod tests {
             condition: Some("'$(CustomProps)' != ''".into()),
             evaluated_condition: Some("'' != ''".into()),
         }];
-        let notes = import_annotations(SAMPLE, &skipped);
-        assert_eq!(notes.get(&4).map(String::as_str), Some("'' != '' → false"));
+        let inlays = import_inlays(SAMPLE, &skipped);
+        let inlay = inlays.get(&4).expect("badge on the Import's line");
+        let line = SAMPLE.lines().nth(4).unwrap();
+        let value_start = line.find("Condition=\"").unwrap() + "Condition=\"".len();
+        let value_end = value_start + line[value_start..].find('"').unwrap();
+        assert_eq!(inlay.value, Some(value_start..value_end));
+        assert_eq!(&line[inlay.value.clone().unwrap()], "'$(CustomProps)' != ''");
+        assert_eq!(inlay.at, value_end + 1, "a badge would trail the closing quote");
+        assert_eq!(inlay.detail, "'' != '' → false");
+        assert_eq!(inlay.evaluated.as_deref(), Some("'' != ''"));
+    }
+
+    #[test]
+    fn a_reason_without_a_condition_reads_as_skipped() {
+        let skipped = vec![SemanticSkippedImport {
+            line: 5,
+            column: 3,
+            file_spec: None,
+            reason: Some("Not imported due to file not found".into()),
+            condition: None,
+            evaluated_condition: None,
+        }];
+        let inlays = import_inlays(SAMPLE, &skipped);
+        let inlay = inlays.get(&4).unwrap();
+        assert_eq!(inlay.detail, "Not imported due to file not found");
+        assert_eq!(inlay.evaluated, None);
     }
 
     #[test]

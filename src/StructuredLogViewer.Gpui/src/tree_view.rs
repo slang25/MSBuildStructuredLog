@@ -92,6 +92,9 @@ pub struct TreeView {
     sort: std::collections::HashMap<String, i32>,
     menu: Option<ContextMenu>,
     focus_handle: FocusHandle,
+    /// A reveal landed without a window to focus with; the next render
+    /// gives the tree the keyboard.
+    pending_focus: bool,
 }
 
 impl EventEmitter<TreeEvent> for TreeView {}
@@ -120,6 +123,7 @@ impl TreeView {
             sort: std::collections::HashMap::new(),
             menu: None,
             focus_handle: cx.focus_handle(),
+            pending_focus: false,
         };
         this.expand(0, cx);
         this
@@ -219,6 +223,27 @@ impl TreeView {
         .detach();
     }
 
+    /// The tree's visible rows as JSON, for `--automation` dumps and tests.
+    pub fn describe(&self) -> serde_json::Value {
+        let rows: Vec<serde_json::Value> = self
+            .model
+            .rows()
+            .iter()
+            .take(500)
+            .map(|row| {
+                serde_json::json!({
+                    "id": row.node.id,
+                    "kind": row.node.kind,
+                    "title": row.node.title,
+                    "depth": row.depth,
+                    "expanded": row.expanded,
+                    "hasChildren": row.node.has_children,
+                })
+            })
+            .collect();
+        serde_json::json!({ "rowCount": self.model.len(), "rows": rows, "selected": self.selected })
+    }
+
     /// Expands every ancestor of `node_id`, then selects and scrolls to it.
     pub fn reveal(&mut self, node_id: String, cx: &mut Context<Self>) {
         let session = self.session.clone();
@@ -230,7 +255,10 @@ impl TreeView {
                     return;
                 }
             };
-            let Some((_, ancestors)) = chain.split_last() else { return };
+            let Some((_, ancestors)) = chain.split_last() else {
+                eprintln!("reveal({node_id}): the bridge reported no ancestors");
+                return;
+            };
             for ancestor in ancestors {
                 let aid = ancestor.id.clone();
                 // Fetch whenever the ancestor isn't expanded yet, even if an
@@ -263,13 +291,26 @@ impl TreeView {
                         }
                     }
                     Some(false) => {}
-                    None => return,
+                    None => {
+                        eprintln!(
+                            "reveal({node_id}): ancestor {aid} ({}) is not in the tree; chain {:?}",
+                            ancestor.title,
+                            chain.iter().map(|n| n.id.as_str()).collect::<Vec<_>>()
+                        );
+                        return;
+                    }
                 }
             }
             this.update(cx, |this, cx| {
                 if let Some(ix) = this.model.index_of(&node_id) {
                     this.select(ix, cx);
                     this.scroll.scroll_to_item(ix, ScrollStrategy::Center);
+                    // Revealed from a search result, a favourite or the
+                    // source well: the tree is where the keyboard goes next.
+                    this.pending_focus = true;
+                    cx.notify();
+                } else {
+                    eprintln!("reveal({node_id}): not in the tree after expanding its ancestors");
                 }
             })
             .ok();
@@ -372,6 +413,9 @@ impl TreeView {
 impl Render for TreeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.global::<Theme>();
+        if std::mem::take(&mut self.pending_focus) {
+            self.focus_handle.focus(window, cx);
+        }
         let focused = self.focus_handle.is_focused(window);
         let count = self.model.len();
 
@@ -432,6 +476,8 @@ impl Render for TreeView {
 
                             let mut el = div()
                                 .id(ix)
+                                .relative()
+                                .child(crate::automation::probe(format!("tree-row-{ix}")))
                                 .h(px(ROW_HEIGHT))
                                 .w_full()
                                 .flex()

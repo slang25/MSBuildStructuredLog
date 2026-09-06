@@ -51,7 +51,9 @@ pub fn key_bindings() -> Vec<gpui::KeyBinding> {
     vec![
         K::new("cmd-o", OpenFile, None),
         K::new("cmd-w", CloseBuild, None),
-        K::new("cmd-f", FocusSearch, None),
+        // Inside the source well ⌘F finds in the file instead; a bare
+        // binding would outrank the well's (gpui gives it maximum depth).
+        K::new("cmd-f", FocusSearch, Some("!SourceWell")),
         K::new("cmd-shift-t", FocusTree, None),
         K::new("cmd-alt-i", ToggleInspector, None),
         K::new("cmd-q", Quit, None),
@@ -207,6 +209,51 @@ impl Workspace {
             mode,
             sidebar_tab: SidebarTab::SearchLog,
         }
+    }
+
+    /// Everything an `--automation` dump or a test wants to know.
+    pub fn describe(&self, window: &Window, cx: &App) -> serde_json::Value {
+        let focus = if let Phase::Loaded(loaded) = &self.phase {
+            let focused = |handle: FocusHandle| handle.is_focused(window);
+            loaded
+                .well
+                .read(cx)
+                .focus_kind(window, cx)
+                .map(str::to_string)
+                .or_else(|| focused(loaded.tree.read(cx).focus_handle(cx)).then(|| "tree".to_string()))
+                .or_else(|| focused(loaded.search.read(cx).focus_handle(cx)).then(|| "search-input".to_string()))
+                .or_else(|| focused(loaded.properties.read(cx).focus_handle(cx)).then(|| "properties-input".to_string()))
+                .or_else(|| loaded.files.as_ref().filter(|f| focused(f.read(cx).focus_handle(cx))).map(|_| "files-filter".to_string()))
+                .or_else(|| loaded.find_in_files.as_ref().filter(|f| focused(f.read(cx).focus_handle(cx))).map(|_| "find-in-files-input".to_string()))
+                .or_else(|| self.focus_handle.is_focused(window).then(|| "workspace".to_string()))
+                .unwrap_or_else(|| "other".to_string())
+        } else {
+            "n/a".to_string()
+        };
+        let phase = match &self.phase {
+            Phase::Welcome => "welcome",
+            Phase::Loading { .. } => "loading",
+            Phase::Failed { .. } => "failed",
+            Phase::Loaded(_) => "loaded",
+        };
+        let mut value = serde_json::json!({
+            "phase": phase,
+            "focus": focus,
+            "sidebar": self.sidebar_tab.element_id(),
+            "mode": match self.mode { DetailMode::Tree => "tree", DetailMode::Timeline => "timeline" },
+            "inspectorVisible": self.inspector_visible,
+        });
+        if let Phase::Failed { message, .. } = &self.phase {
+            value["error"] = serde_json::Value::String(message.clone());
+        }
+        if let Phase::Loaded(loaded) = &self.phase {
+            value["well"] = loaded.well.read(cx).describe(cx);
+            value["tree"] = loaded.tree.read(cx).describe();
+            value["search"] = loaded.search.read(cx).describe(cx);
+            value["properties"] = loaded.properties.read(cx).describe(cx);
+            value["files"] = loaded.files.as_ref().map(|f| f.read(cx).describe(cx)).unwrap_or(serde_json::Value::Null);
+        }
+        value
     }
 
     // ----- lifecycle -----
@@ -393,7 +440,16 @@ impl Workspace {
         });
     }
 
-    fn reveal(&mut self, id: String, cx: &mut Context<Self>) {
+    /// The session behind the loaded build, for tests.
+    #[cfg(test)]
+    pub(crate) fn session(&self) -> Option<Arc<Session>> {
+        match &self.phase {
+            Phase::Loaded(loaded) => Some(loaded.session.clone()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn reveal(&mut self, id: String, cx: &mut Context<Self>) {
         self.mode = DetailMode::Tree;
         if let Phase::Loaded(loaded) = &self.phase {
             loaded.tree.update(cx, |tree, cx| tree.reveal(id, cx));
@@ -491,8 +547,12 @@ impl Workspace {
 
     fn on_files_event<T: 'static>(&mut self, _view: Entity<T>, event: &FilesEvent, cx: &mut Context<Self>) {
         let FilesEvent::Open { path, line } = event;
+        self.open_source(path.clone(), *line, cx);
+    }
+
+    /// Show `path` in the source well, as a sidebar row does.
+    pub(crate) fn open_source(&mut self, path: String, line: Option<usize>, cx: &mut Context<Self>) {
         let Phase::Loaded(loaded) = &self.phase else { return };
-        let (path, line) = (path.clone(), *line);
         self.inspector_visible = true;
         loaded.well.update(cx, |well, cx| well.open_file(path, line, None, cx));
         cx.notify();
@@ -565,8 +625,18 @@ impl Workspace {
         }
     }
 
-    fn toggle_inspector(&mut self, _: &ToggleInspector, _window: &mut Window, cx: &mut Context<Self>) {
+    fn toggle_inspector(&mut self, _: &ToggleInspector, window: &mut Window, cx: &mut Context<Self>) {
         self.inspector_visible = !self.inspector_visible;
+        // Focus left on an element that is no longer rendered is a dead
+        // end: keystrokes dispatch along its (empty) path and every
+        // shortcut stops working. Hand it to the tree.
+        if !self.inspector_visible
+            && let Phase::Loaded(loaded) = &self.phase
+            && loaded.well.read(cx).focus_kind(window, cx).is_some()
+        {
+            let handle = loaded.tree.read(cx).focus_handle(cx);
+            handle.focus(window, cx);
+        }
         cx.notify();
     }
 
@@ -896,6 +966,8 @@ impl Workspace {
                 let on = tab == active;
                 div()
                     .id(tab.element_id())
+                    .relative()
+                    .child(crate::automation::probe(tab.element_id()))
                     .flex()
                     .flex_shrink(1.)
                     .min_w_0()
@@ -991,6 +1063,10 @@ impl Render for Workspace {
 
         div()
             .id("workspace")
+            // Always at least one key context on the focus path: gpui
+            // matches no context predicate (even a negated one) against an
+            // empty stack, which would drop ⌘F when only the root is focused.
+            .key_context("Workspace")
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::open_file))
             .on_action(cx.listener(Self::close_build))

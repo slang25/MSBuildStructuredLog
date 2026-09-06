@@ -71,7 +71,12 @@ pub fn state_accent(node: &NodeSummary, theme: &Theme) -> Option<Hsla> {
 /// The tint Visual Studio gives each project type, lightened for a dark
 /// row: `#1F801F` and `#00539C` disappear against near-black.
 fn project_tint(node: &NodeSummary, theme: &Theme) -> Hsla {
-    let (light, dark) = match node.prop("extension").map(|e| e.to_ascii_lowercase()).as_deref() {
+    tint_for_extension(node.prop("extension"), theme)
+}
+
+/// The language tint a project or build file gets from its extension.
+pub fn tint_for_extension(extension: Option<&str>, theme: &Theme) -> Hsla {
+    let (light, dark) = match extension.map(|e| e.to_ascii_lowercase()).as_deref() {
         Some(".csproj") => (0x1f801f, 0x5cc05c),
         Some(".vbproj") => (0x00539c, 0x5a9be0),
         Some(".fsproj") => (0x682878, 0xb37bc4),

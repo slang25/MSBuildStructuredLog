@@ -45,6 +45,8 @@ pub fn key_bindings() -> Vec<gpui::KeyBinding> {
 pub enum InputEvent {
     Changed,
     Submitted,
+    /// Escape was pressed; the text (if any) has already been cleared.
+    Cancelled,
 }
 
 pub struct TextInput {
@@ -134,6 +136,7 @@ impl TextInput {
         if !self.content.is_empty() {
             self.set_text("", cx);
         }
+        cx.emit(InputEvent::Cancelled);
     }
 
     fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {

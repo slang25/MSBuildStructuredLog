@@ -81,6 +81,7 @@ impl SearchView {
         cx.subscribe(&input, |this, _input, event, cx| match event {
             InputEvent::Changed => this.schedule(true, cx),
             InputEvent::Submitted => this.schedule(false, cx),
+            InputEvent::Cancelled => {}
         })
         .detach();
         SearchView {
@@ -240,6 +241,33 @@ impl SearchView {
         cx.notify();
     }
 
+    /// The pane's state as JSON, for `--automation` dumps and tests.
+    pub fn describe(&self, cx: &App) -> serde_json::Value {
+        let rows: Vec<serde_json::Value> = self
+            .rows
+            .iter()
+            .take(500)
+            .map(|row| {
+                let text = row
+                    .node
+                    .node
+                    .as_ref()
+                    .map(|n| n.title.clone())
+                    .or_else(|| row.node.text.clone())
+                    .unwrap_or_default();
+                serde_json::json!({ "depth": row.depth, "text": text, "hasChildren": row.has_children, "path": row.path })
+            })
+            .collect();
+        serde_json::json!({
+            "query": self.input.read(cx).text(),
+            "searching": self.searching,
+            "error": self.error,
+            "rowCount": self.rows.len(),
+            "rows": rows,
+            "selected": self.selected,
+        })
+    }
+
     fn render_row(&self, ix: usize, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
         let row = &self.rows[ix];
         let node = row.node.clone();
@@ -285,6 +313,8 @@ impl SearchView {
 
         let mut el = div()
             .id(ix)
+            .relative()
+            .child(crate::automation::probe(format!("search-row-{ix}")))
             .h(px(ROW_HEIGHT))
             .w_full()
             .flex()
@@ -404,6 +434,9 @@ impl Render for SearchView {
             .size_full()
             .bg(theme.sidebar_background)
             .when(self.mode == SearchMode::PropertiesAndItems, |d| d.child(self.render_context_bar(&theme)))
+            // A click on a row keeps the pane's field focused instead of
+            // handing focus to the workspace root.
+            .track_focus(&self.input.read(cx).focus_handle(cx))
             .child(div().p(px(8.)).child(self.input.clone()))
             .child(div().flex_1().min_h_0().child(body))
     }

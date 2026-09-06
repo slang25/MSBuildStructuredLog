@@ -642,6 +642,10 @@ public sealed class MSBuildSemanticModel
             var distinguishing = globals.Values
                 .SelectMany(g => g.Keys)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
+                // Solution builds pass whole XML documents as global
+                // properties (CurrentSolutionConfigurationContents); a label
+                // that runs to a page is no label at all.
+                .Where(key => globals.Values.All(g => !g.TryGetValue(key, out var value) || IsLabelSized(value)))
                 .Where(key => globals.Values
                     .Select(g => g.TryGetValue(key, out var value) ? value : null)
                     .Distinct(StringComparer.Ordinal)
@@ -663,6 +667,11 @@ public sealed class MSBuildSemanticModel
                     : $" #{context.Evaluation.Id}";
             }
         }
+    }
+
+    private static bool IsLabelSized(string value)
+    {
+        return value.Length <= 48 && value.IndexOfAny(new[] { '\r', '\n' }) < 0;
     }
 
     private static Dictionary<string, string> GetGlobalProperties(ProjectEvaluation evaluation)

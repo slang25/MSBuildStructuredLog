@@ -6,9 +6,10 @@
 //! canvas over WebGPU.
 //!
 //! Usage (native): structured-log-viewer-gpui [path.binlog] [--search <query>] [--reveal <nodeId>] [--source <path>] [--line N] [--timeline]
-//!                 [--pane search|properties|files|find|favorites] [--props <query>] [--find <term>]
+//!                 [--pane search|properties|files|find|favorites] [--props <query>] [--find <term>] [--automation]
 //! Usage (web):    index.html?binlog=<url>&search=<query>&reveal=<nodeId>&source=<path>&line=N&timeline
 
+mod automation;
 mod engine;
 mod favorites;
 mod files_view;
@@ -25,6 +26,8 @@ mod theme;
 mod timeline_view;
 mod tree;
 mod tree_view;
+#[cfg(test)]
+mod ui_tests;
 #[cfg(target_family = "wasm")]
 mod web;
 mod workspace;
@@ -96,9 +99,11 @@ fn main() {
 
     let mut launch = Launch::default();
     let mut path: Option<PathBuf> = None;
+    let mut automation = false;
     let mut iter = std::env::args().skip(1);
     while let Some(arg) = iter.next() {
         match arg.as_str() {
+            "--automation" => automation = true,
             "--search" => launch.search = iter.next(),
             "--reveal" => launch.reveal = iter.next(),
             "--source" => launch.source = iter.next(),
@@ -157,6 +162,9 @@ fn main() {
                 cx.activate(true);
             })
             .ok();
+        if automation {
+            automation::serve(cx, window);
+        }
     });
 }
 

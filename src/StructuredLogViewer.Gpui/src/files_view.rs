@@ -24,7 +24,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 const ROW_HEIGHT: f32 = 22.;
-const INDENT: f32 = 14.;
+/// Matches the build tree and the search panes, so the panes read as one.
+const INDENT: f32 = 12.;
 const DEBOUNCE: Duration = Duration::from_millis(300);
 const MIN_TERM: usize = 3;
 const MAX_RESULTS: usize = 500;
@@ -139,8 +140,9 @@ pub struct FilesView {
     tree: Vec<TreeNode>,
     rows: Vec<FileRow>,
     total: usize,
-    /// Folder paths the user opened. Ignored while a filter is active.
-    expanded: HashSet<String>,
+    /// Folder paths the user folded; everything starts open, as in the
+    /// WPF viewer. Ignored while a filter is active.
+    collapsed: HashSet<String>,
     selected: Option<usize>,
     loading: bool,
     error: Option<String>,
@@ -160,7 +162,7 @@ impl FilesView {
     pub fn new(session: Arc<Session>, cx: &mut Context<Self>) -> Self {
         let filter = cx.new(|cx| TextInput::new("Filter files", cx));
         cx.subscribe(&filter, |this, _input, event, cx| match event {
-            InputEvent::Changed | InputEvent::Submitted => {
+            InputEvent::Changed | InputEvent::Submitted | InputEvent::Cancelled => {
                 this.rebuild_rows(cx);
                 cx.notify();
             }
@@ -173,7 +175,7 @@ impl FilesView {
             tree: Vec::new(),
             rows: Vec::new(),
             total: 0,
-            expanded: HashSet::new(),
+            collapsed: HashSet::new(),
             selected: None,
             loading: true,
             error: None,
@@ -194,13 +196,6 @@ impl FilesView {
                     Ok(list) => {
                         this.total = list.total.max(list.files.len());
                         this.tree = build_tree(&list.files);
-                        // One level open is enough orientation without
-                        // unfolding thousands of rows.
-                        for node in &this.tree {
-                            if !node.file {
-                                this.expanded.insert(node.path.clone());
-                            }
-                        }
                         this.rebuild_rows(cx);
                     }
                     Err(err) => this.error = Some(format!("{err:#}")),
@@ -212,11 +207,30 @@ impl FilesView {
         .detach();
     }
 
+    /// The pane's state as JSON, for `--automation` dumps and tests.
+    pub fn describe(&self, cx: &App) -> serde_json::Value {
+        let rows: Vec<serde_json::Value> = self
+            .rows
+            .iter()
+            .take(500)
+            .map(|r| serde_json::json!({ "depth": r.depth, "name": r.name, "path": r.path, "file": r.file, "expanded": r.expanded, "lines": r.lines }))
+            .collect();
+        serde_json::json!({
+            "total": self.total,
+            "filter": self.filter.read(cx).text(),
+            "loading": self.loading,
+            "error": self.error,
+            "rowCount": self.rows.len(),
+            "rows": rows,
+            "selected": self.selected,
+        })
+    }
+
     fn rebuild_rows(&mut self, cx: &mut Context<Self>) {
         let filter = self.filter.read(cx).text().trim().to_lowercase();
         let mut rows = Vec::new();
         for node in &self.tree {
-            emit(node, 0, &filter, &self.expanded, &mut rows);
+            emit(node, 0, &filter, &self.collapsed, &mut rows);
         }
         self.rows = rows;
         self.selected = None;
@@ -229,8 +243,8 @@ impl FilesView {
             cx.emit(FilesEvent::Open { path: row.path.clone(), line: None });
         } else {
             let path = row.path.clone();
-            if !self.expanded.remove(&path) {
-                self.expanded.insert(path);
+            if !self.collapsed.remove(&path) {
+                self.collapsed.insert(path);
             }
             self.rebuild_rows(cx);
         }
@@ -241,7 +255,7 @@ impl FilesView {
 /// Appends `node`'s visible rows, returning whether anything survived.
 /// Without a filter the tree shows as the user folded it; with one, only
 /// files whose path matches survive and every folder above one is opened.
-fn emit(node: &TreeNode, depth: usize, filter: &str, expanded: &HashSet<String>, rows: &mut Vec<FileRow>) -> bool {
+fn emit(node: &TreeNode, depth: usize, filter: &str, collapsed: &HashSet<String>, rows: &mut Vec<FileRow>) -> bool {
     if node.file {
         if !filter.is_empty() && !node.path.to_lowercase().contains(filter) {
             return false;
@@ -257,7 +271,7 @@ fn emit(node: &TreeNode, depth: usize, filter: &str, expanded: &HashSet<String>,
         return true;
     }
 
-    let open = filter.is_empty().then(|| expanded.contains(&node.path)).unwrap_or(true);
+    let open = filter.is_empty().then(|| !collapsed.contains(&node.path)).unwrap_or(true);
     let at = rows.len();
     rows.push(FileRow {
         depth,
@@ -273,7 +287,7 @@ fn emit(node: &TreeNode, depth: usize, filter: &str, expanded: &HashSet<String>,
     }
     let mut any = false;
     for child in &node.children {
-        any |= emit(child, depth + 1, filter, expanded, rows);
+        any |= emit(child, depth + 1, filter, collapsed, rows);
     }
     if !any && !filter.is_empty() {
         rows.truncate(at);
@@ -310,6 +324,9 @@ impl Render for FilesView {
             .flex_col()
             .size_full()
             .bg(theme.sidebar_background)
+            // A click on a row keeps the pane's field focused instead of
+            // handing focus to the workspace root.
+            .track_focus(&self.filter.read(cx).focus_handle(cx))
             .child(div().p(px(8.)).child(self.filter.clone()))
             .child(
                 div()
@@ -331,8 +348,20 @@ impl FilesView {
         let row = &self.rows[ix];
         let selected = self.selected == Some(ix);
 
+        // Same furniture as the build tree and the search panes: a
+        // chevron slot, a drawn icon, then the text.
+        let surface = if selected { theme.selection_inactive } else { theme.sidebar_background };
+        let icon = if row.file {
+            let extension = row.name.rfind('.').map(|dot| &row.name[dot..]);
+            crate::icons::NodeIcon::Document { tint: crate::styling::tint_for_extension(extension, theme), evaluation: false }
+        } else {
+            crate::icons::NodeIcon::Chip(crate::icons::Tone::Folder)
+        };
+
         let mut el = div()
             .id(ix)
+            .relative()
+            .child(crate::automation::probe(format!("file-row-{ix}")))
             .h(px(ROW_HEIGHT))
             .w_full()
             .flex()
@@ -355,6 +384,7 @@ impl FilesView {
         el.child(
             div()
                 .w(px(14.))
+                .h_full()
                 .flex_none()
                 .flex()
                 .items_center()
@@ -369,16 +399,7 @@ impl FilesView {
                     "▶"
                 }),
         )
-        .child(
-            div()
-                .w(px(16.))
-                .flex_none()
-                .flex()
-                .justify_center()
-                .text_size(px(11.))
-                .text_color(if row.file { theme.link } else { theme.warning })
-                .child(if row.file { "▭" } else { "▪" }),
-        )
+        .child(div().w(px(20.)).flex_none().flex().justify_center().child(crate::icons::render(icon, theme, surface)))
         .child(
             div()
                 .flex_1()
@@ -386,7 +407,6 @@ impl FilesView {
                 .overflow_hidden()
                 .whitespace_nowrap()
                 .text_ellipsis()
-                .when(!row.file, |d| d.font_weight(FontWeight::MEDIUM))
                 .child(row.name.clone()),
         )
         .when(row.file && row.lines > 0, |d| {
@@ -444,6 +464,7 @@ impl FindInFilesView {
         cx.subscribe(&input, |this, _input, event, cx| match event {
             InputEvent::Changed => this.schedule(true, cx),
             InputEvent::Submitted => this.schedule(false, cx),
+            InputEvent::Cancelled => {}
         })
         .detach();
         FindInFilesView {
@@ -648,6 +669,9 @@ impl Render for FindInFilesView {
             .flex_col()
             .size_full()
             .bg(theme.sidebar_background)
+            // A click on a row keeps the pane's field focused instead of
+            // handing focus to the workspace root.
+            .track_focus(&self.input.read(cx).focus_handle(cx))
             .child(div().p(px(8.)).child(self.input.clone()))
             .child(div().flex_1().min_h_0().child(body))
     }
@@ -658,6 +682,8 @@ impl FindInFilesView {
         let selected = self.selected == Some(ix);
         let base = div()
             .id(ix)
+            .relative()
+            .child(crate::automation::probe(format!("find-row-{ix}")))
             .h(px(ROW_HEIGHT))
             .w_full()
             .flex()
@@ -780,14 +806,15 @@ mod tests {
     fn folded_folders_hide_their_contents() {
         let files = [entry("/a/b/one.props")];
         let tree = build_tree(&files);
+        // Everything starts open.
         let mut rows = Vec::new();
         emit(&tree[0], 0, "", &HashSet::new(), &mut rows);
-        assert_eq!(row_paths(&rows), vec![(0, "a/b".to_string())]);
-
-        let expanded: HashSet<String> = ["a/b".to_string()].into_iter().collect();
-        let mut rows = Vec::new();
-        emit(&tree[0], 0, "", &expanded, &mut rows);
         assert_eq!(row_paths(&rows), vec![(0, "a/b".to_string()), (1, "one.props".to_string())]);
+
+        let collapsed: HashSet<String> = ["a/b".to_string()].into_iter().collect();
+        let mut rows = Vec::new();
+        emit(&tree[0], 0, "", &collapsed, &mut rows);
+        assert_eq!(row_paths(&rows), vec![(0, "a/b".to_string())]);
     }
 
     #[test]
@@ -795,8 +822,9 @@ mod tests {
         let files = [entry("/a/keep/one.props"), entry("/a/drop/two.targets")];
         let tree = build_tree(&files);
         let mut rows = Vec::new();
-        // No folder is expanded, yet the filter still reaches the match.
-        emit(&tree[0], 0, "one", &HashSet::new(), &mut rows);
+        // Folded or not, the filter still reaches the match.
+        let collapsed: HashSet<String> = ["a".to_string(), "a/keep".to_string()].into_iter().collect();
+        emit(&tree[0], 0, "one", &collapsed, &mut rows);
         assert_eq!(
             row_paths(&rows),
             vec![(0, "a".to_string()), (1, "keep".to_string()), (2, "one.props".to_string())]
