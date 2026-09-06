@@ -34,12 +34,5 @@
     <ProjectReference Include="..\..\StructuredLogViewer.NativeBridge\StructuredLogViewer.NativeBridge.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- Same trimming root the NativeAOT dylib needs: StructuredLogger's Reflector reads private fields of the
-         MSBuild event-args types via Linq Expressions; without this the wasm publish trims them and every
-         binlog record fails to deserialize (empty build). TrimmerRootDescriptor only applies to the project
-         being published, so the bridge's copy is referenced here directly. -->
-    <TrimmerRootDescriptor Include="..\..\StructuredLogViewer.NativeBridge\ILLink.Descriptors.xml" />
-  </ItemGroup>
 
 </Project>

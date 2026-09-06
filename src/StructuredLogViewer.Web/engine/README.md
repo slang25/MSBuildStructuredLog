@@ -171,9 +171,10 @@ and MEMFS holds the whole file in memory in addition to the object graph), and t
    FNV-1a based ones that write into the MEMFS `/tmp/MSBuildStructuredLog`. No engine code changed.
 2. **Trimming vs. StructuredLogger's Reflector.** The wasm publish trims (`PublishTrimmed`), and the engine
    reads private fields of `Microsoft.Build.Framework` event-args types through Linq Expressions; the NativeAOT
-   dylib hit the same thing (empty builds). The csproj points `TrimmerRootDescriptor` at the bridge's
-   `ILLink.Descriptors.xml` (a `TrimmerRootDescriptor` item only applies to the project being published, so
-   the bridge's own item does nothing here). Result: 357,856 nodes read correctly.
+   dylib hit the same thing (empty builds). This used to need a `TrimmerRootDescriptor` preserving those types.
+   It no longer does: `StructuredLogger` now carries `IsAotCompatible` and Chet Husk's
+   `[DynamicallyAccessedMembers(NonPublicFields)]` annotations on the `Reflector` accessors (cherry-picked from
+   upstream PR #963), so the trimmer keeps the fields on its own. Result: 357,856 nodes read correctly.
 3. **JSON.** Reflection-based `JsonSerializer` is disabled under trimming; every payload goes through the
    bridge's source-generated `BridgeJsonContext`. The two engine-only shapes (`{"text"}` and the
    `{"error":{...}}` envelope) have their own tiny `EngineJsonContext` in `Engine.cs`. Args are parsed with

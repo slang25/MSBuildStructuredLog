@@ -30,9 +30,6 @@
     <InternalsVisibleTo Include="StructuredLogViewer.WebEngine" />
   </ItemGroup>
 
-  <ItemGroup>
-    <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
-  </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="..\BinlogMcp\SearchSyntax.md">
