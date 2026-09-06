@@ -41,10 +41,20 @@ internal static class FileSearch
 
     public static string ReadFile(BridgeSession session, string path)
     {
+        // Go through the full resolver first, so anything the semantic layer
+        // advertised as available via SourceFileResolver.HasFile is readable
+        // here too — that includes files still present on local disk, not
+        // just the ones embedded in the archive.
+        var resolved = session.SourceFileResolver?.GetSourceFileText(path);
+        if (resolved != null)
+        {
+            return resolved.Text ?? string.Empty;
+        }
+
         var files = GetFiles(session);
         if (files.Count == 0)
         {
-            throw new FileNotFoundException("No embedded files in this binlog.");
+            throw new FileNotFoundException($"No embedded files in this binlog and '{path}' is not on disk.");
         }
 
         string normalized = ArchiveFile.CalculateArchivePath(path);
@@ -112,6 +122,15 @@ internal static class FileSearch
                     continue;
                 }
 
+                if (matches != null && matches.Count >= MaxMatchesPerFile)
+                {
+                    // A match beyond the per-file cap: the caller is being
+                    // handed a partial list, so say so rather than letting
+                    // the response look complete.
+                    response.Overflow = true;
+                    break;
+                }
+
                 matches ??= new List<FileMatchDto>();
                 matches.Add(new FileMatchDto
                 {
@@ -120,11 +139,6 @@ internal static class FileSearch
                     Spans = spans
                 });
                 total++;
-
-                if (matches.Count >= MaxMatchesPerFile)
-                {
-                    break;
-                }
             }
 
             if (matches != null)

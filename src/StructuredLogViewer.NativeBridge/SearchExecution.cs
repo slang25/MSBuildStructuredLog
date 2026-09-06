@@ -73,12 +73,20 @@ internal static class SearchExecution
         try
         {
             var stopwatch = Stopwatch.StartNew();
+
+            // PropertiesAndItemsSearch applies maxResults per constituent
+            // search (per-term evaluation searches, the execution search,
+            // AugmentResults) and then concatenates them, so its output can
+            // run well past `cap`. Re-apply the cap to the final sequence so
+            // the endpoint honours its advertised maximum.
             var results = search.Search(
                 timedContext,
                 query,
                 maxResults: cap,
                 markResultsInTree: false,
-                cancellationToken).ToArray();
+                cancellationToken)
+                .Take(cap)
+                .ToArray();
             stopwatch.Stop();
             cancellationToken.ThrowIfCancellationRequested();
 

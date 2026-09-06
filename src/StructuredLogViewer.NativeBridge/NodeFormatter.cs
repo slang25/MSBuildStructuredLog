@@ -212,7 +212,10 @@ internal static class NodeFormatter
                 break;
             case NoImport noImport:
                 Add("projectFilePath", noImport.ProjectFilePath);
-                Add("importedFileSpec", noImport.ImportedFileSpec);
+                // NoImport's construction path stores the skipped file spec in
+                // Text; only the legacy .buildlog reader populates the
+                // ImportedFileSpec property, so fall back to Text.
+                Add("importedFileSpec", noImport.ImportedFileSpec ?? noImport.Text);
                 Add("reason", noImport.Reason);
                 Add("line", noImport.Line.ToString(CultureInfo.InvariantCulture));
                 Add("column", noImport.Column.ToString(CultureInfo.InvariantCulture));

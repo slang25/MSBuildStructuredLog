@@ -3,8 +3,8 @@
 The gpui viewer in the browser, with the .NET engine running in a Web
 Worker. Same Rust UI as `../StructuredLogViewer.Gpui` (it is the same
 crate, compiled for `wasm32-unknown-unknown` with `gpui_web`), same engine
-as the Swift app and the native gpui app (`StructuredLogger` behind the
-bridge's `BridgeSession`/`NodeFormatter`/`SearchExecution`, compiled to
+as the native app (`StructuredLogger` behind the bridge's
+`BridgeSession`/`NodeFormatter`/`SearchExecution`, compiled to
 browser-wasm).
 
 ```
@@ -15,11 +15,15 @@ browser tab
        engine/Engine.cs  [JSExport] Call(method, argsJson) → mslog.h-shaped JSON
 ```
 
-The only JavaScript is `engine/wwwroot/engine-worker.js` (65 lines): it
+The only JavaScript is `engine/wwwroot/engine-worker.js` (~120 lines): it
 boots the runtime, writes the chosen binlog into the in-memory filesystem,
 and forwards messages to the one exported C# method. Inside each module the
 calls are direct; the seam is the worker's message port, which is also what
-keeps a multi-second load or search from freezing the page.
+keeps a multi-second load or search from freezing the page. `open` and
+`close` are serialized there so an overlapping pair cannot reach the
+singleton engine out of order, and a staged binlog is unlinked from MEMFS
+once its session is superseded or closed — MEMFS lives in the wasm heap and
+never shrinks on its own.
 
 ## Build and run
 

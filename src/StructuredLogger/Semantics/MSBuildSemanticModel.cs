@@ -168,12 +168,31 @@ public sealed class MSBuildSemanticModel
 
     public ProjectEvaluation FindEvaluation(int id) => build.FindEvaluation(id);
 
+    /// <summary>
+    /// Case-insensitive child lookup by title. <see cref="TreeNode.FindChild{T}(string)"/>
+    /// falls through to <c>ChildrenList.FindNode</c>, which compares titles
+    /// with <c>==</c> — but property, item and metadata names are all
+    /// case-insensitive in MSBuild, so <c>$(outputpath)</c> has to find the
+    /// recorded <c>OutputPath</c>.
+    /// </summary>
+    private static T FindChildByName<T>(TreeNode parent, string name) where T : BaseNode
+    {
+        if (parent == null)
+        {
+            return null;
+        }
+
+        return parent.FindChild<T, string>(
+            static (child, name) => string.Equals(child.Title, name, StringComparison.OrdinalIgnoreCase),
+            name);
+    }
+
     // ----- properties -----
 
     private void ResolveProperty(ProjectEvaluation evaluation, string name, SemanticSymbol symbol)
     {
         var propertiesFolder = evaluation.FindChild<Folder>(Strings.Properties);
-        var property = propertiesFolder?.FindChild<Property>(name);
+        var property = FindChildByName<Property>(propertiesFolder, name);
         if (property != null)
         {
             symbol.Found = true;
@@ -236,7 +255,7 @@ public sealed class MSBuildSemanticModel
     private static List<PropertyAssignmentMessage> FindAssignments(TimedNode folder, string name)
     {
         var result = new List<PropertyAssignmentMessage>();
-        var perProperty = folder?.FindChild<Folder>(name);
+        var perProperty = FindChildByName<Folder>(folder, name);
         if (perProperty == null)
         {
             return result;
@@ -278,7 +297,7 @@ public sealed class MSBuildSemanticModel
     private void ResolveItem(ProjectEvaluation evaluation, string name, SemanticSymbol symbol)
     {
         var itemsFolder = evaluation.FindChild<Folder>(Strings.Items);
-        var itemGroup = itemsFolder?.FindChild<AddItem>(name);
+        var itemGroup = FindChildByName<AddItem>(itemsFolder, name);
         if (itemGroup == null)
         {
             return;

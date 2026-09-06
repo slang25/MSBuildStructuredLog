@@ -192,6 +192,13 @@ if let semantic = semanticFile {
     print("    $(MSBuildProjectFile) = \(property.value ?? "<none>") found=\(property.found)")
     expect(property.kind == "property" && property.name == "MSBuildProjectFile", "property echoes kind/name")
 
+    // MSBuild property names are case-insensitive, so $(msbuildprojectfile)
+    // has to find the same thing the recorded MSBuildProjectFile does.
+    check(mslogSemanticResolve(handle, evaluationId, "property", "msbuildprojectfile", &json, &err), "semantic_resolve lowercase", err)
+    let lowercased = try! JSONDecoder().decode(SemanticSymbol.self, from: take(json).data(using: .utf8)!)
+    expect(lowercased.found == property.found && lowercased.value == property.value,
+           "property lookup ignores case")
+
     check(mslogSemanticResolve(handle, evaluationId, "property", "NoSuchPropertyAnywhere", &json, &err), "semantic_resolve missing", err)
     let missing = try! JSONDecoder().decode(SemanticSymbol.self, from: take(json).data(using: .utf8)!)
     expect(!missing.found, "unknown property reports found=false rather than erroring")

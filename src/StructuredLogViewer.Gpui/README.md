@@ -1,15 +1,15 @@
 # StructuredLogViewer.Gpui (spike)
 
 The viewer front end written directly on Zed's [`gpui`](https://gpui.rs)
-crate, with the .NET engine behind `libmslog.dylib` — the same NativeAOT
-bridge the Swift macOS app talks to. Going straight to the Rust crate has
+crate, with the .NET engine behind `libmslog.dylib`, the NativeAOT bridge
+in `../StructuredLogViewer.NativeBridge`. Going straight to the Rust crate has
 the whole framework available: system font and weights, `uniform_list`,
 custom `Element`s, native menus, file dialogs, clipboard, drag-and-drop,
 window appearance, key contexts.
 
 ```
 Rust views (gpui: uniform_list tree, custom text input, dock-less split)
-    ↕ engine.rs — libloading over include/mslog.h, serde over the same JSON DTOs BinlogKit decodes
+    ↕ engine.rs — libloading over include/mslog.h, serde over the bridge's JSON DTOs
     ↕ libmslog.dylib (…/StructuredLogViewer.NativeBridge, NativeAOT)
     ↕ StructuredLogger / StructuredLogger.Utils (unchanged)
 ```
@@ -83,8 +83,8 @@ bridge's `out/` folder in the source tree.
   (IME, selection, clipboard) emitting change/submit events.
 - `inspector.rs` — details from `mslog_node_get`, with View Source /
   Preprocess buttons.
-- `msbuild.rs` — the Mac viewer's `XMLHighlighter` + `MSBuildTokenizer`
-  ported: one linear byte scan for colours, one for navigable tokens
+- `msbuild.rs` — `XMLHighlighter` + `MSBuildTokenizer`: one linear byte
+  scan for colours, one for navigable tokens
   (`$(prop)`, `@(item)`, target names, Import/Sdk paths), the
   `SemanticIndex` that joins tokens to the build's recorded import edges,
   and the end-of-element annotations for skipped imports. Unit-tested.
@@ -197,7 +197,7 @@ the app. Windows and Linux packaging are not wired up — the bridge is a
 ## Not done
 
 Project graph, target/property/NuGet graphs, run/debug a task, hide a node,
-find-in-file inside the editor, line wrapping (the Mac editor wraps; this one
-scrolls horizontally, which is why the inlays pin to the viewport).
+find-in-file inside the editor, line wrapping (this one scrolls
+horizontally, which is why the inlays pin to the viewport).
 Favorites live for the session only — the WPF viewer persists them. None of
 the sidebar result lists take the keyboard yet; the build tree does.

@@ -357,9 +357,23 @@ public static unsafe class Exports
             }
 
             var manager = session.PreprocessedFileManager;
-            string text = manager.GetPreprocessedText(
-                preprocessable.RootFilePath,
-                PreprocessedFileManager.GetNodeEvaluationKey(node));
+
+            // PreprocessedFileManager memoizes into plain Dictionaries, and
+            // the properties/items search reaches the same manager through
+            // PropertyGraph. Share the session's search lock so the two
+            // can't write those caches concurrently.
+            string text;
+            session.SearchLock.Wait();
+            try
+            {
+                text = manager.GetPreprocessedText(
+                    preprocessable.RootFilePath,
+                    PreprocessedFileManager.GetNodeEvaluationKey(node));
+            }
+            finally
+            {
+                session.SearchLock.Release();
+            }
 
             if (string.IsNullOrEmpty(text))
             {

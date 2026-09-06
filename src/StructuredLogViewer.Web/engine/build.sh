@@ -13,6 +13,13 @@ DOTNET_HOME="${DOTNET_HOME:-/usr/local/share/dotnet}"
 DOTNET="$DOTNET_HOME/dotnet"
 PORT="${PORT:-8940}"
 
+# --serve is ours, not dotnet's; pull it out before anything else reaches `dotnet publish`.
+SERVE=0
+PUBLISH_ARGS=()
+for arg in "$@"; do
+  if [ "$arg" = "--serve" ]; then SERVE=1; else PUBLISH_ARGS+=("$arg"); fi
+done
+
 # SDK 10.0.203 resolves the newest loose workload manifest (10.0.111 -> packs 10.0.11) but only packs
 # <= 10.0.8 are installed (fixing that needs sudo). Point the SDK at a copy of the manifests with
 # everything above 10.0.108 removed so 10.0.108 -> packs 10.0.8 resolves.
@@ -38,14 +45,14 @@ rm -rf "$PUB"
 # Mono AOT by default: 5x faster load and 3-5x faster search than the interpreter on the sample
 # binlog, for ~3x the download (31 MB vs 9.7 MB uncompressed). AOT=0 ./build.sh for the interpreter.
 AOT_FLAG="-p:RunAOTCompilation=true"; [ "${AOT:-1}" = "0" ] && AOT_FLAG=""
-( cd "$HERE" && "$DOTNET" publish StructuredLogViewer.WebEngine.csproj -c Release $AOT_FLAG "$@" )
+( cd "$HERE" && "$DOTNET" publish StructuredLogViewer.WebEngine.csproj -c Release $AOT_FLAG ${PUBLISH_ARGS+"${PUBLISH_ARGS[@]}"} )
 WWW="$PUB/wwwroot"
 echo
 echo "publish wwwroot: $WWW"
 du -sh "$WWW/_framework" | sed 's/^/_framework: /'
 ls -la "$WWW/_framework/dotnet.native.wasm" "$WWW/engine-worker.js" "$WWW/test.html" "$WWW/sample.binlog" 2>/dev/null || true
 
-if [ "${1:-}" = "--serve" ]; then
+if [ "$SERVE" = "1" ]; then
   echo "Serving $WWW on http://127.0.0.1:$PORT/test.html  (Ctrl-C to stop)"
   exec python3 "$HERE/serve.py" "$WWW" "$PORT"
 fi
