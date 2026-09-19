@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [gpui-viewer]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+
+jobs:
+  # Keeps the fork's delta against upstream small and accounted for.
+  # See docs/fork/MAINTENANCE.md.
+  fork-delta:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/KirillOsenkov/MSBuildStructuredLog.git
+          git fetch --no-tags upstream main
+      - name: Check upstream delta
+        run: ./scripts/check-upstream-delta.sh upstream/main
+
+  dotnet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+      - name: Build
+        run: |
+          dotnet build src/StructuredLogger/StructuredLogger.csproj -c Release
+          dotnet build src/StructuredLogger.Utils/StructuredLogger.Utils.csproj -c Release
+          dotnet build src/StructuredLogViewer.Semantics/StructuredLogViewer.Semantics.csproj -c Release
+          dotnet build src/BinlogMcp/BinlogMcp.csproj -c Release
+
+  # Upstream's test project is net472 and references System.Windows.Forms, so
+  # it only runs on Windows. Worth a job of its own for one test:
+  # EveryConcreteObjectModelTypeCanBeCreated is what stops the hand-written
+  # Serialization.CreateNode switch from drifting when upstream adds a node type.
+  tests:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+      - run: dotnet test src/StructuredLogger.Tests/StructuredLogger.Tests.csproj -c Release
+
+  # The NativeAOT bridge and the gpui viewer that loads it. macOS-only: gpui's
+  # platform layer and libmslog.dylib both are.
+  viewer:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+            11.0.x
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src/StructuredLogViewer.Gpui
+      # No toolchain action: rust-toolchain.toml pins the channel gpui's rev
+      # needs, and the runner's rustup installs it on first cargo invocation.
+      - name: Build libmslog.dylib
+        run: ./src/StructuredLogViewer.NativeBridge/build-dylib.sh
+      - name: cargo test
+        working-directory: src/StructuredLogViewer.Gpui
+        # The UI tests find the dylib at ../StructuredLogViewer.NativeBridge/out,
+        # which is where build-dylib.sh just put it.
+        run: cargo test
+
+  # Not built here: src/StructuredLogViewer.Web/engine. Its toolchain is pinned
+  # to a specific SDK + workload-manifest layout on a dev machine (see that
+  # directory's README and build.sh); reproducing it on a hosted runner is a
+  # separate piece of work.

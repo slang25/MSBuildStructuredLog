@@ -1,0 +1,64 @@
+# Upstream files this fork is allowed to modify.
+#
+# Enforced by scripts/check-upstream-delta.sh (run in CI). Any upstream file we
+# modify that is not listed here fails the build; any file listed here that we
+# no longer modify is reported as stale so the entry can be deleted.
+#
+# The rule this file exists to protect: our own code lives in our own
+# directories, and the patch against upstream stays small enough to hold in
+# your head. See docs/fork/MAINTENANCE.md.
+#
+# Adding a line here is a deliberate act. Before you do, check the change
+# really cannot live in src/StructuredLogViewer.{Gpui,NativeBridge,Semantics,Web}.
+#
+# Format: one repo-relative path per line. '#' starts a comment.
+
+
+# --- Trivial modernization -------------------------------------------------
+# Standalone, defensible without reference to this fork. First candidates to
+# send upstream.
+
+.gitignore                                          # ignore .DS_Store
+src/StructuredLogger/BinaryLog.cs                    # Enum.GetValues<T>() on net5+
+src/StructuredLogger/BinaryLogger/BuildEventArgsReader.cs  # Marshal.SizeOf<Guid>()
+
+
+# --- Upstream bug fix ------------------------------------------------------
+# Nodes added to the tree after BuildAnalyzer ran keep the default Index 0 and
+# collide with the Build root in the MCP server's index map. First-wins keeps
+# the analyzer's assignment.
+
+src/BinlogMcp/BinlogCache.cs
+
+
+# --- Native AOT / trimming compatibility -----------------------------------
+# Required for the NativeBridge (NativeAOT dylib) and the browser-wasm engine.
+# Upstream already ships PublishNativeAOT.sh for the Avalonia viewer, so this
+# serves their stated goal too. BinarySerializationTests carries the test that
+# keeps Serialization.CreateNode's hand-written switch honest.
+
+src/StructuredLogger/StructuredLogger.csproj         # IsAotCompatible
+src/StructuredLogger.Utils/StructuredLogger.Utils.csproj  # IsAotCompatible
+src/StructuredLogger/Reflector.cs                    # DynamicallyAccessedMembers + DynamicDependency
+src/StructuredLogger/Serialization/Serialization.cs  # CreateNode switch replaces Activator.CreateInstance
+src/StructuredLogger.Tests/BinarySerializationTests.cs  # guards the switch above
+
+
+# --- NodeId decoupling -----------------------------------------------------
+# NodeId.Resolve takes the index map rather than the MCP server's LoadedBinlog,
+# so the NativeBridge can Compile-Include the file. Strict improvement upstream.
+
+src/BinlogMcp/NodeId.cs
+src/BinlogMcp/BinlogTools.cs                         # call sites
+src/BinlogMcp/BinlogTools.Preprocess.cs              # call sites
+src/BinlogMcp/BinlogTools.Search.cs                  # call sites
+
+
+# --- Import conditions -----------------------------------------------------
+# NoImport records the Condition it was skipped for, separately from the prose
+# Reason, so the source viewer can annotate the attribute it came from.
+# Additive public API; useful to upstream's own viewer.
+
+src/StructuredLogger/ObjectModel/NoImport.cs         # Condition / EvaluatedCondition
+src/StructuredLogger/Analyzers/ImportTreeAnalyzer.cs # captures them
+src/StructuredLogger/ObjectModel/ProjectEvaluation.cs  # ExistingImportsFolder, GetAllNoImportsTransitive
