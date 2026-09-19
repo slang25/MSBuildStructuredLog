@@ -19,12 +19,15 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-/// The checked-in log, or whatever `MSLOG_TEST_BINLOG` points at, to
-/// reproduce something seen on a real log headlessly.
+/// The fixture in testdata/, or whatever `MSLOG_TEST_BINLOG` points at, to
+/// reproduce something seen on a real log headlessly. The fixture is a copy
+/// of upstream's src/StructuredLogger.Tests/msbuild.binlog, which the repo
+/// root's `*.binlog` rule keeps untracked -- assertions here depend on its
+/// contents, so it travels with the tests instead.
 fn binlog() -> PathBuf {
     match std::env::var_os("MSLOG_TEST_BINLOG") {
         Some(path) => PathBuf::from(path),
-        None => Path::new(env!("CARGO_MANIFEST_DIR")).join("../StructuredLogger.Tests/msbuild.binlog"),
+        None => Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/msbuild.binlog"),
     }
 }
 

@@ -1,0 +1,3 @@
+# The repo root ignores *.binlog. This one is a test fixture: the UI tests in
+# src/ui_tests.rs assert against its contents, so it has to travel with them.
+!*.binlog

@@ -19,8 +19,10 @@ let state = well.read_with(cx, |w, cx| w.describe(cx));
 Assertions go against `describe()`, the same JSON the automation channel
 dumps. Tests take a process-wide lock (`serial()`): two sessions opening
 on the bridge from two threads has crashed it. `MSLOG_TEST_BINLOG=/path`
-points them at another log to reproduce something seen on a real build. The engine is the real `libmslog.dylib` on the checked-in
-`src/StructuredLogger.Tests/msbuild.binlog`; without the dylib each test
+points them at another log to reproduce something seen on a real build. The engine is the real `libmslog.dylib` on the fixture in
+`testdata/msbuild.binlog` (a copy of upstream's
+`src/StructuredLogger.Tests/msbuild.binlog`, which the repo root's `*.binlog`
+rule keeps untracked); without the dylib each test
 prints a note and passes vacuously. Text is not shaped in the fake
 platform (glyph advance is zero), so tests can assert on behaviour and
 element bounds but not on pixel geometry that depends on text width.
