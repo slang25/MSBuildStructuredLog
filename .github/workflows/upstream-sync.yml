@@ -1,8 +1,13 @@
 name: Upstream sync
 
-# Merges KirillOsenkov/MSBuildStructuredLog main into gpui-viewer every day and
-# opens a PR. The point is to hit conflicts one upstream commit at a time,
-# while the change is still fresh, instead of once a year in a heap.
+# Keeps `master` a clean mirror of KirillOsenkov/MSBuildStructuredLog `main` --
+# no fork commits ever land on it -- and opens a PR from `master` into
+# `gpui-viewer` when there is something to absorb.
+#
+# The PR diff is upstream's actual commits rather than one squashed merge, and
+# GitHub does the conflict detection. The point is to hit conflicts one upstream
+# commit at a time, while the change is still fresh, instead of once a year in a
+# heap.
 #
 # Merge, never rebase: rebasing our commits re-resolves the same conflicts on
 # every sync. See docs/fork/MAINTENANCE.md.
@@ -20,7 +25,7 @@ permissions:
 env:
   UPSTREAM_URL: https://github.com/KirillOsenkov/MSBuildStructuredLog.git
   TARGET_BRANCH: gpui-viewer
-  SYNC_BRANCH: upstream-sync
+  MIRROR_BRANCH: master
   GH_TOKEN: ${{ github.token }}
 
 jobs:
@@ -36,89 +41,92 @@ jobs:
         run: |
           git config user.name "upstream-sync[bot]"
           git config user.email "upstream-sync@users.noreply.github.com"
-          git config rerere.enabled true
           git remote add upstream "$UPSTREAM_URL"
           git fetch --no-tags upstream main
+          git fetch --no-tags origin "$MIRROR_BRANCH"
 
-      - name: Anything to do?
-        id: check
+      # A mirror only ever fast-forwards. If it cannot, someone has committed to
+      # master, which is exactly the thing this branch is not for -- say so
+      # rather than force-pushing over it.
+      - name: Update the mirror
+        id: mirror
         run: |
-          behind=$(git rev-list --count HEAD..upstream/main)
-          echo "behind=$behind" >> "$GITHUB_OUTPUT"
-          echo "Behind upstream/main by $behind commit(s)."
-          if [ "$behind" = "0" ]; then
-            echo "Already up to date."
-          else
-            git log --oneline HEAD..upstream/main | head -50
+          if ! git merge-base --is-ancestor "origin/$MIRROR_BRANCH" upstream/main; then
+            echo "::error::origin/$MIRROR_BRANCH is not an ancestor of upstream/main."
+            echo "::error::Something was committed to the mirror branch. Sort that out by hand."
+            exit 1
+          fi
+          behind=$(git rev-list --count "origin/$MIRROR_BRANCH..upstream/main")
+          echo "Mirror is $behind commit(s) behind upstream/main."
+          if [ "$behind" != "0" ]; then
+            git push origin "upstream/main:refs/heads/$MIRROR_BRANCH"
           fi
 
-      - name: Merge
-        id: merge
-        if: steps.check.outputs.behind != '0'
+      - name: Anything for us to absorb?
+        id: check
         run: |
-          git checkout -B "$SYNC_BRANCH"
-          if git merge --no-edit upstream/main; then
-            echo "conflicts=" >> "$GITHUB_OUTPUT"
+          pending=$(git rev-list --count "HEAD..upstream/main")
+          echo "pending=$pending" >> "$GITHUB_OUTPUT"
+          echo "$TARGET_BRANCH is $pending commit(s) behind upstream/main."
+          if [ "$pending" != "0" ]; then
+            git log --oneline "HEAD..upstream/main" | head -50
+          fi
+
+      # GitHub reports mergeability on the PR, but only after a delay and never
+      # in the job log. Find out now so the PR body can say.
+      - name: Trial merge
+        id: merge
+        if: steps.check.outputs.pending != '0'
+        run: |
+          if git merge --no-commit --no-ff upstream/main >/dev/null 2>&1; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+            echo "Merges cleanly."
           else
-            echo "result=conflict" >> "$GITHUB_OUTPUT"
+            echo "clean=false" >> "$GITHUB_OUTPUT"
             {
               echo 'conflicts<<CONFLICTS'
               git diff --name-only --diff-filter=U
               echo 'CONFLICTS'
             } >> "$GITHUB_OUTPUT"
-            git merge --abort
+            echo "Conflicts:"
+            git diff --name-only --diff-filter=U
           fi
-
-      # A clean merge still has to satisfy the fork's rules and build: upstream
-      # can rename a node type or move a file we depend on without conflicting.
-      - name: Check upstream delta
-        if: steps.check.outputs.behind != '0' && steps.merge.outputs.result != 'conflict'
-        id: delta
-        continue-on-error: true
-        run: ./scripts/check-upstream-delta.sh upstream/main
+          git merge --abort 2>/dev/null || git reset --hard
 
       - name: Open or update the sync PR
-        if: steps.check.outputs.behind != '0' && steps.merge.outputs.result != 'conflict'
+        if: steps.check.outputs.pending != '0'
         run: |
-          git push --force origin "$SYNC_BRANCH"
+          if [ "${{ steps.merge.outputs.clean }}" = "true" ]; then
+            state="Merges cleanly into \`$TARGET_BRANCH\`."
+          else
+            state=$(printf '%s\n' \
+              "**Conflicts.** Resolve locally -- \`rerere\` is on, so the resolution is" \
+              "remembered for the next sync:" \
+              "" \
+              '```' \
+              "git fetch upstream main && git checkout $TARGET_BRANCH && git merge upstream/main" \
+              '```' \
+              "" \
+              "Conflicted paths:" \
+              "" \
+              '```' \
+              "${{ steps.merge.outputs.conflicts }}" \
+              '```' \
+              "" \
+              "If a conflict is in a file on \`docs/fork/upstream-delta.allow\`, that is a fork" \
+              "patch colliding with an upstream edit -- a good moment to ask whether that patch" \
+              "can go upstream instead.")
+          fi
           body=$(printf '%s\n' \
-            "Merges \`upstream/main\` (${{ steps.check.outputs.behind }} new commit(s)) into \`$TARGET_BRANCH\`." \
+            "${{ steps.check.outputs.pending }} new upstream commit(s) on \`$MIRROR_BRANCH\` (a clean mirror of" \
+            "\`KirillOsenkov/MSBuildStructuredLog@main\`)." \
             "" \
-            "Merged cleanly. Delta guard: **${{ steps.delta.outcome }}** — if that says \`failure\`, upstream" \
-            "moved something this fork patches; see the job log and reconcile" \
-            "\`docs/fork/upstream-delta.allow\`." \
+            "$state" \
             "" \
             "Opened by \`.github/workflows/upstream-sync.yml\`.")
-          if gh pr view "$SYNC_BRANCH" --json number >/dev/null 2>&1; then
-            gh pr edit "$SYNC_BRANCH" --body "$body"
+          if gh pr view "$MIRROR_BRANCH" --json number >/dev/null 2>&1; then
+            gh pr edit "$MIRROR_BRANCH" --body "$body"
           else
-            gh pr create --base "$TARGET_BRANCH" --head "$SYNC_BRANCH" \
+            gh pr create --base "$TARGET_BRANCH" --head "$MIRROR_BRANCH" \
               --title "Sync with upstream main" --body "$body"
-          fi
-
-      - name: File an issue when the merge conflicts
-        if: steps.merge.outputs.result == 'conflict'
-        run: |
-          title="Upstream sync conflicts with $TARGET_BRANCH"
-          body=$(printf '%s\n' \
-            "\`git merge upstream/main\` into \`$TARGET_BRANCH\` conflicts. Conflicted paths:" \
-            "" \
-            '```' \
-            "${{ steps.merge.outputs.conflicts }}" \
-            '```' \
-            "" \
-            "Resolve locally — \`rerere\` is on, so the resolution is remembered for the next sync:" \
-            "" \
-            '```' \
-            "git fetch upstream main && git checkout $TARGET_BRANCH && git merge upstream/main" \
-            '```' \
-            "" \
-            "If the conflict is in a file on \`docs/fork/upstream-delta.allow\`, that is the fork patch" \
-            "colliding with an upstream edit — a good moment to ask whether that patch can go upstream" \
-            "instead. Opened by \`.github/workflows/upstream-sync.yml\`.")
-          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number')
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
-          else
-            gh issue create --title "$title" --body "$body"
           fi

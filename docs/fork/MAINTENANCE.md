@@ -60,9 +60,11 @@ git checkout gpui-viewer
 git merge upstream/main
 ```
 
-`.github/workflows/upstream-sync.yml` does this daily and opens a PR, or files
-an issue when it conflicts. The point is to hit conflicts one upstream commit at
-a time while the change is still fresh, rather than once a year in a heap.
+`.github/workflows/upstream-sync.yml` does this daily: it fast-forwards `master`
+to upstream `main`, then opens a PR from `master` into `gpui-viewer`, saying in
+the body whether it merges cleanly and which paths conflict if not. The point is
+to hit conflicts one upstream commit at a time while the change is still fresh,
+rather than once a year in a heap.
 
 Turn on `rerere` locally so a resolution you work out once is replayed next
 time:
@@ -74,7 +76,11 @@ git config rerere.autoupdate true
 
 ## Remotes and branches
 
-- `gpui-viewer` — the long-lived branch. Everything lands here.
+- `gpui-viewer` — the default branch, and the long-lived one. Everything lands
+  here.
+- `master` — a clean mirror of upstream `main`. No fork commit ever lands on it;
+  the sync workflow only fast-forwards it, and fails loudly if it can't. It
+  exists so the daily sync PR's diff is upstream's actual commits.
 - Upstream is `https://github.com/KirillOsenkov/MSBuildStructuredLog.git`. In
   a local clone it may be called `origin` or `upstream`; the delta script takes
   either, and CI adds it explicitly as `upstream`.
