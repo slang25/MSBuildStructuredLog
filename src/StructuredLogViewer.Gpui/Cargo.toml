@@ -9,8 +9,10 @@ name = "structured-log-viewer-gpui"
 path = "src/main.rs"
 
 [dependencies]
-# Same rev gpui-dotnet resolved, so the cargo git cache is reused.
-gpui = { git = "https://github.com/zed-industries/zed", rev = "f66ed399" }
+# zed main as of 2026-09-19. (The rev used to match whatever gpui-dotnet
+# resolved, to share the cargo git cache; that spike is archived, so the pin
+# now just tracks a zed commit we have tested against.)
+gpui = { git = "https://github.com/zed-industries/zed", rev = "916fc2b8" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
@@ -18,7 +20,7 @@ futures = "0.3"
 
 # Native: the platform crate plus the dylib loader for libmslog.
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "f66ed399", features = ["runtime_shaders", "font-kit"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "916fc2b8", features = ["runtime_shaders", "font-kit"] }
 libloading = "0.8"
 
 # `--automation` screenshots capture by window id (both already in the
@@ -31,7 +33,7 @@ core-graphics = "0.23"
 # `multithreaded` feature stays off — that feature needs wasm atomics and a
 # nightly toolchain. The engine runs in a Web Worker instead.
 [target.'cfg(target_family = "wasm")'.dependencies]
-gpui_web = { git = "https://github.com/zed-industries/zed", rev = "f66ed399", default-features = false }
+gpui_web = { git = "https://github.com/zed-industries/zed", rev = "916fc2b8", default-features = false }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
@@ -47,7 +49,7 @@ web-sys = { version = "0.3", features = [
 [dev-dependencies]
 # Headless UI tests: gpui's fake platform, deterministic executor and
 # simulated input (src/ui_tests.rs).
-gpui = { git = "https://github.com/zed-industries/zed", rev = "f66ed399", features = ["test-support"] }
+gpui = { git = "https://github.com/zed-industries/zed", rev = "916fc2b8", features = ["test-support"] }
 resvg = "0.46"
 usvg = "0.46"
 tiny-skia = "0.11"
