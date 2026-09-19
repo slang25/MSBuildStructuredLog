@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Microsoft.Build.Logging.StructuredLogger;
+using StructuredLogViewer.Semantics;
 
 namespace StructuredLogViewer.NativeBridge;
 

@@ -4,8 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.Build.Logging.StructuredLogger;
 
-namespace Microsoft.Build.Logging.StructuredLogger;
+namespace StructuredLogViewer.Semantics;
 
 /// <summary>
 /// Answers "go to definition" and "quick info" questions about MSBuild

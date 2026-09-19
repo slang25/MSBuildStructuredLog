@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Fork-owned. Lived under src/StructuredLogger/Semantics until it was pulled out: as a file in
+       upstream's project directory it was glob-compiled into MSBuild.StructuredLogger and silently
+       widened that package's public API. See docs/fork/MAINTENANCE.md. -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>StructuredLogViewer.Semantics</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\StructuredLogger\StructuredLogger.csproj" />
+  </ItemGroup>
+
+</Project>

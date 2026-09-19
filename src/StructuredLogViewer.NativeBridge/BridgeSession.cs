@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Microsoft.Build.Logging.StructuredLogger;
+using StructuredLogViewer.Semantics;
 using StructuredLogViewer;
 
 namespace StructuredLogViewer.NativeBridge;

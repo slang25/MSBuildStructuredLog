@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
+using Microsoft.Build.Logging.StructuredLogger;
 
-namespace Microsoft.Build.Logging.StructuredLogger;
+namespace StructuredLogViewer.Semantics;
 
 public enum SemanticSymbolKind
 {

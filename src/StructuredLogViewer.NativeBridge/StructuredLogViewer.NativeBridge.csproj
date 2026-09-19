@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\StructuredLogger\StructuredLogger.csproj" />
     <ProjectReference Include="..\StructuredLogger.Utils\StructuredLogger.Utils.csproj" />
+    <ProjectReference Include="..\StructuredLogViewer.Semantics\StructuredLogViewer.Semantics.csproj" />
   </ItemGroup>
 
   <ItemGroup>
