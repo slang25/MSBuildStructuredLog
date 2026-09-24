@@ -68,7 +68,9 @@
       await ready;
       log(`worker ready in ${fmt(performance.now() - t0)}`);
 
-      R.open = await timed('open sample.binlog', 'open', { url: './sample.binlog' },
+      // ?url= points the whole protocol run at another log, e.g. test.html?url=/gha/owner/repo/123
+      const binlogUrl = new URLSearchParams(location.search).get('url') || './sample.binlog';
+      R.open = await timed(`open ${binlogUrl}`, 'open', { url: binlogUrl },
         (r) => `rootId=${r.rootId} succeeded=${r.succeeded} nodes=${r.nodeCount} errors=${r.errorCount} warnings=${r.warningCount} size=${bytes(r.fileSize)} msbuild=${r.msBuildVersion}`);
       R.buildInfo = await timed('build_info', 'build_info', {}, (r) => `rootId=${r.rootId} durationMs=${r.durationMs} hasSourceArchive=${r.hasSourceArchive}`);
       R.children = await timed('node_children(root, 0, 50)', 'node_children', { id: R.buildInfo?.rootId ?? R.open?.rootId, offset: 0, count: 50, sortMode: 0 },

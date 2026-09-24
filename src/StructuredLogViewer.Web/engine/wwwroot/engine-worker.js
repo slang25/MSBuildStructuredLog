@@ -106,7 +106,7 @@ function retire(method, staged, reachedEngine) {
 
 // open: {url} or {file} (a File) or {path} (already in the runtime FS). Writes the bytes into the
 // emscripten in-memory filesystem and returns the path the C# side expects, plus whether this
-// worker owns it (and so may unlink it later).
+// worker owns it (and so may unlink it later). A zip is unpacked to the binlog inside it first.
 async function stage(args) {
     if (args.path && !args.url && !args.file) return { path: args.path, owned: false };
     let bytes, name;
@@ -115,14 +115,98 @@ async function stage(args) {
         name = args.file.name || 'upload.binlog';
     } else if (args.url) {
         const res = await fetch(args.url);
-        if (!res.ok) throw new Error(`fetch ${args.url}: HTTP ${res.status}`);
+        if (!res.ok) throw new Error(await failureMessage(args.url, res));
         bytes = new Uint8Array(await res.arrayBuffer());
-        name = decodeURIComponent(new URL(args.url, self.location.href).pathname.split('/').pop() || 'download.binlog');
+        // A GitHub Actions artifact arrives via /gha/… and a redirect to blob storage, so neither URL
+        // ends in the file name. The blob's Content-Disposition carries it.
+        name = dispositionFileName(res.headers.get('content-disposition'))
+            || decodeURIComponent(new URL(args.url, self.location.href).pathname.split('/').pop() || '');
     } else {
         throw new Error("open needs {url}, {file} or {path}");
     }
+    // Zipped artifacts (upload-artifact's default, and every download from the Actions UI) open as
+    // the binlog inside them.
+    if (isZip(bytes)) ({ bytes, name } = await unzipBinlog(bytes, name || 'download.zip'));
+    // StructuredLogger picks its reader by extension, and a URL like /gha/owner/repo/123 has none.
+    if (!/\.(binlog|buildlog|xml)$/i.test(name)) name = (name || 'download') + '.binlog';
     const path = '/binlogs/' + name.replace(/[^\w.\-]+/g, '_');
     unlink(path);
     fs.writeFile(path, bytes);
     return { path, owned: true };
+}
+
+// /gha/… explains a refusal in the response body (expired artifact, private repo, …). Pass that on
+// rather than leaving the page with a bare status code.
+async function failureMessage(url, res) {
+    let detail = '';
+    try { detail = (await res.text()).trim().slice(0, 300); } catch { /* no body */ }
+    return `fetch ${url}: HTTP ${res.status}` + (detail && !detail.startsWith('<') ? ` — ${detail}` : '');
+}
+
+function dispositionFileName(header) {
+    if (!header) return null;
+    const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
+    let name = null;
+    if (star) { try { name = decodeURIComponent(star[1].trim()); } catch { /* malformed */ } }
+    if (!name) {
+        const plain = /filename\s*=\s*(?:"([^"]*)"|([^;]+))/i.exec(header);
+        name = plain ? (plain[1] ?? plain[2]).trim() : null;
+    }
+    return name ? name.split(/[\\/]/).pop() : null;
+}
+
+function isZip(bytes) {
+    return bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
+}
+
+// Just enough zip to get a binlog out. Sizes come from the central directory, because
+// upload-artifact streams its entries with data descriptors and leaves zeros in the local headers.
+// Stored or deflate only, and no zip64: a binlog near 4 GB would not fit in a tab anyway.
+async function unzipBinlog(bytes, zipName) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const bad = (why) => new Error(`${zipName}: ${why}`);
+    let eocd = -1;
+    for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 0xffff); i--) {
+        if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw bad('not a readable zip (no end-of-central-directory record)');
+    const count = view.getUint16(eocd + 10, true);
+    let p = view.getUint32(eocd + 16, true);
+    if (p === 0xffffffff) throw bad('zip64 archives are not supported');
+
+    const binlogs = [];
+    for (let n = 0; n < count; n++) {
+        if (view.getUint32(p, true) !== 0x02014b50) throw bad('corrupt central directory');
+        const nameLen = view.getUint16(p + 28, true);
+        const entry = {
+            name: new TextDecoder().decode(bytes.subarray(p + 46, p + 46 + nameLen)),
+            method: view.getUint16(p + 10, true),
+            compressedSize: view.getUint32(p + 20, true),
+            size: view.getUint32(p + 24, true),
+            offset: view.getUint32(p + 42, true),
+        };
+        if (/\.binlog$/i.test(entry.name)) binlogs.push(entry);
+        p += 46 + nameLen + view.getUint16(p + 30, true) + view.getUint16(p + 32, true);
+    }
+    if (binlogs.length === 0) throw bad('no .binlog inside');
+
+    // Several binlogs in one artifact: take the largest, which is usually the build rather than a
+    // restore.
+    const e = binlogs.reduce((a, b) => (b.size > a.size ? b : a));
+    if (e.compressedSize === 0xffffffff || e.size === 0xffffffff || e.offset === 0xffffffff) {
+        throw bad('zip64 archives are not supported');
+    }
+    if (view.getUint32(e.offset, true) !== 0x04034b50) throw bad(`corrupt local header for ${e.name}`);
+    const start = e.offset + 30 + view.getUint16(e.offset + 26, true) + view.getUint16(e.offset + 28, true);
+    const data = bytes.subarray(start, start + e.compressedSize);
+    let out;
+    if (e.method === 0) {
+        out = data.slice();
+    } else if (e.method === 8) {
+        const inflated = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+        out = new Uint8Array(await new Response(inflated).arrayBuffer());
+    } else {
+        throw bad(`${e.name} uses compression method ${e.method}; only stored and deflate are supported`);
+    }
+    return { bytes: out, name: e.name.split('/').pop() };
 }

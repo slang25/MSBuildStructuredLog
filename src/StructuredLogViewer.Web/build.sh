@@ -33,6 +33,9 @@ ENGINE_WWWROOT="$(find "$HERE/engine" -type d -path '*publish/wwwroot' | head -1
 cp -R "$ENGINE_WWWROOT/_framework" "$DIST/_framework"
 cp "$ENGINE_WWWROOT/engine-worker.js" "$DIST/engine-worker.js"
 [ -f "$ENGINE_WWWROOT/sample.binlog" ] && cp "$ENGINE_WWWROOT/sample.binlog" "$DIST/sample.binlog"
+# The engine's protocol self-test. test.html?url=/gha/owner/repo/123 exercises the Actions path
+# without the UI (or WebGPU).
+cp "$ENGINE_WWWROOT/test.html" "$DIST/test.html"
 du -sh "$DIST"/*.wasm "$DIST/_framework" 2>/dev/null || true
 
 if [ "$SERVE" = 1 ]; then
