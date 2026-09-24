@@ -10,7 +10,7 @@
 # image. So the build happens here and only dist/ goes up.
 #
 # CF_PAGES_PROJECT overrides the project name. `npx wrangler login` first.
-# /gha/* needs a GITHUB_TOKEN secret on the project; see functions/gha/[[path]].js.
+# /gha/* needs the GitHub App's secrets on the project; see README.md.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="${CF_PAGES_PROJECT:-structured-log-viewer}"

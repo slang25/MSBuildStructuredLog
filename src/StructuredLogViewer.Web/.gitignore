@@ -1,4 +1,4 @@
 dist/
 .wrangler/
-# wrangler pages dev reads local secrets (GITHUB_TOKEN) from here
+# wrangler pages dev reads local secrets (the GITHUB_APP_* values) from here
 .dev.vars

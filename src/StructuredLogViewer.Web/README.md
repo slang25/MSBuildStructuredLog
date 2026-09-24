@@ -67,12 +67,14 @@ The action (`.github/actions/binlog`) uploads the file unzipped
 own CI does exactly that for its `dotnet` job.
 
 `/gha/*` is a Pages Function (`functions/gha/[[path]].js`). GitHub's artifact
-API needs a token even for public repositories, so the Function asks with a
-server-side one and answers with a 302 to the signed, 10-minute, read-only blob
-URL GitHub returns. The browser follows it itself, because the blob serves
+API needs a token even for public repositories, so the Function asks as the
+[Structured Log Viewer GitHub App](https://github.com/apps/structured-log-viewer)
+and answers with a 302 to the signed, 10-minute, read-only blob URL GitHub
+returns. The browser follows it itself, because the blob serves
 `Access-Control-Allow-Origin: *`, so the binlog's bytes never pass through
 Cloudflare. The Function serves **public repositories only**, and checks
-visibility itself rather than trusting the token's reach. It serves only
+visibility itself, because the app's token *can* read any private repo the app
+is installed on. It serves only
 artifacts with "binlog" in the name, and explains any refusal (expired,
 private, not a binlog) in a body the viewer shows as-is.
 
@@ -81,21 +83,41 @@ because StructuredLogger picks its reader by extension and `/gha/…/123` has
 none. It also unzips zipped artifacts, so workflows that upload binlogs the
 default way work too, as do zips downloaded from the Actions UI.
 
-The Function needs a token on the Pages project:
+### The GitHub App
 
-```sh
-# github.com/settings/personal-access-tokens/new:
-#   Repository access "Public repositories (read-only)", no permissions
-npx wrangler pages secret put GITHUB_TOKEN --project-name structured-log-viewer
-```
+`structured-log-viewer` (app id 5058784) is a private app owned by slang25,
+with *Actions: read* and *Metadata: read* permissions and no webhooks. It is
+installed once, on slang25's account (installation 164371732), for
+`MSBuildStructuredLog` only. That installation's token reads the artifacts of
+**any** public repository, installed on or not (verified against
+`dotnet/maui`), so one installation serves every public repo and nobody using
+the action has to install anything. Rate limit is 5,000 requests/hour. The
+Function caches the installation token for its hour, so each click costs three
+API calls and no extra token.
 
-Locally, `npx wrangler pages dev dist` runs the Function too, reading
-`GITHUB_TOKEN=…` from `.dev.vars` (gitignored). `/test?url=/gha/…` runs the
+The Function signs the app's JWT with WebCrypto and takes the private key as
+GitHub hands it out (PKCS#1) or as PKCS#8. Three secrets on the Pages project,
+each set with `npx wrangler pages secret put <NAME> --project-name structured-log-viewer`:
+
+| secret | value |
+|---|---|
+| `GITHUB_APP_ID` | `5058784` |
+| `GITHUB_APP_INSTALLATION_ID` | `164371732` |
+| `GITHUB_APP_PRIVATE_KEY` | a `.pem` from the app's settings page, piped in as downloaded |
+
+Pages applies secrets only to new deployments, so redeploy after changing one
+(`./deploy.sh --skip-build`). To rotate the key, generate a new one in the app's
+settings, put it, redeploy, then delete the old key there. No copy of the key is
+kept anywhere else.
+
+Locally, `npx wrangler pages dev dist` runs the Function too, reading the same
+three names from `.dev.vars` (gitignored; the key can go on one line without its
+`-----` header and footer). `/test?url=/gha/…` runs the
 engine's whole protocol test against an artifact without the UI or WebGPU.
 
-Private repositories need the viewer to act as the user (a pasted
-fine-grained token, or "Sign in with GitHub" via a GitHub App whose code
-exchange this Function would do). Not built yet; the action says so in the
+Private repositories need the viewer to act as the user. The natural route is
+"Sign in with GitHub" through this same app, with the Function doing the code
+exchange (GitHub's token endpoint has no CORS). Not built yet; the action says so in the
 summary instead of linking.
 
 ## Verified in Chrome (DevTools MCP, 2026-09-04)
