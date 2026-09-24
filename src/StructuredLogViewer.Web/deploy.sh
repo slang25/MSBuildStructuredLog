@@ -10,9 +10,10 @@
 # image. So the build happens here and only dist/ goes up.
 #
 # CF_PAGES_PROJECT overrides the project name. `npx wrangler login` first.
+# /gha/* needs a GITHUB_TOKEN secret on the project; see functions/gha/[[path]].js.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT="${CF_PAGES_PROJECT:-structured-log-viewer-wip}"
+PROJECT="${CF_PAGES_PROJECT:-structured-log-viewer}"
 
 BUILD_ARGS=(--no-serve)
 SKIP_BUILD=0
@@ -36,7 +37,9 @@ if [ -n "$BIG" ]; then
 fi
 
 # --branch main so this lands as a production deploy on <project>.pages.dev,
-# whatever branch the working tree happens to be on.
+# whatever branch the working tree happens to be on. Run from here so wrangler
+# picks up functions/ (the /gha/* artifact resolver) alongside dist/.
+cd "$HERE"
 npx --yes wrangler@latest pages deploy "$HERE/dist" \
   --project-name "$PROJECT" \
   --branch main \

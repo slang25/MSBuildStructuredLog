@@ -15,9 +15,10 @@ browser tab
        engine/Engine.cs  [JSExport] Call(method, argsJson) → mslog.h-shaped JSON
 ```
 
-The only JavaScript is `engine/wwwroot/engine-worker.js` (~120 lines): it
-boots the runtime, writes the chosen binlog into the in-memory filesystem,
-and forwards messages to the one exported C# method. Inside each module the
+The page's only JavaScript is `engine/wwwroot/engine-worker.js` (~210 lines): it
+boots the runtime, writes the chosen binlog into the in-memory filesystem
+(unpacking it first if it arrived zipped), and forwards messages to the one
+exported C# method. Inside each module the
 calls are direct; the seam is the worker's message port, which is also what
 keeps a multi-second load or search from freezing the page. `open` and
 `close` are serialized there so an overlapping pair cannot reach the
@@ -43,6 +44,59 @@ URL parameters stand in for the command line: `binlog=<url>`, `search=`,
 `reveal=<nodeId>`, `source=<path>&line=N`, `timeline`. The "Open…" button
 uses a hidden `<input type=file>`; the file is handed to the worker and never
 touches the main thread's memory.
+
+Deployed with `./deploy.sh` to Cloudflare Pages as
+<https://structured-log-viewer.pages.dev>.
+
+## Binlogs from GitHub Actions
+
+One click from a workflow run's summary page to the binlog open in the
+viewer. In the workflow:
+
+```yaml
+- run: dotnet build -bl:build.binlog
+- uses: slang25/MSBuildStructuredLog/.github/actions/binlog@gpui-viewer
+  if: always()
+  with:
+    path: build.binlog
+```
+
+The action (`.github/actions/binlog`) uploads the file unzipped
+(`upload-artifact@v7`, `archive: false`) and writes
+`?binlog=/gha/{owner}/{repo}/{artifactId}` into the job summary. This repo's
+own CI does exactly that for its `dotnet` job.
+
+`/gha/*` is a Pages Function (`functions/gha/[[path]].js`). GitHub's artifact
+API needs a token even for public repositories, so the Function asks with a
+server-side one and answers with a 302 to the signed, 10-minute, read-only blob
+URL GitHub returns. The browser follows it itself, because the blob serves
+`Access-Control-Allow-Origin: *`, so the binlog's bytes never pass through
+Cloudflare. The Function serves **public repositories only**, and checks
+visibility itself rather than trusting the token's reach. It serves only
+artifacts with "binlog" in the name, and explains any refusal (expired,
+private, not a binlog) in a body the viewer shows as-is.
+
+The worker names the staged file from the blob's `Content-Disposition`,
+because StructuredLogger picks its reader by extension and `/gha/…/123` has
+none. It also unzips zipped artifacts, so workflows that upload binlogs the
+default way work too, as do zips downloaded from the Actions UI.
+
+The Function needs a token on the Pages project:
+
+```sh
+# github.com/settings/personal-access-tokens/new:
+#   Repository access "Public repositories (read-only)", no permissions
+npx wrangler pages secret put GITHUB_TOKEN --project-name structured-log-viewer
+```
+
+Locally, `npx wrangler pages dev dist` runs the Function too, reading
+`GITHUB_TOKEN=…` from `.dev.vars` (gitignored). `/test?url=/gha/…` runs the
+engine's whole protocol test against an artifact without the UI or WebGPU.
+
+Private repositories need the viewer to act as the user (a pasted
+fine-grained token, or "Sign in with GitHub" via a GitHub App whose code
+exchange this Function would do). Not built yet; the action says so in the
+summary instead of linking.
 
 ## Verified in Chrome (DevTools MCP, 2026-09-04)
 
