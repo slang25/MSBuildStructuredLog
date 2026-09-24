@@ -17,6 +17,13 @@ description: >
 #
 # One-click viewing works for public repositories. In a private one the binlog
 # is still uploaded, and the summary says why there's no link.
+#
+# A binlog records the build's command line and every environment variable the
+# build read, and GitHub masks secrets in logs, not in artifacts. In a public
+# repository the artifact is downloadable by anyone signed in to GitHub, with or
+# without this viewer, so never pass a secret to a build you record: no
+# -p:ApiKey=${{ secrets.X }}, no secret in an environment variable a property
+# reads. Push, sign or publish in a separate, unrecorded step.
 
 inputs:
   path:

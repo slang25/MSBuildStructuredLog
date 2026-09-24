@@ -78,6 +78,15 @@ is installed on. It serves only
 artifacts with "binlog" in the name, and explains any refusal (expired,
 private, not a binlog) in a body the viewer shows as-is.
 
+What the Function never does: return or log a token (the browser only ever
+sees the blob's signed URL, which grants read access to that one public
+artifact for ten minutes), or send the app's token anywhere but
+`api.github.com`. The host is fixed, and names are validated, dot segments
+included. The one real exposure is the binlog's own content. It records the
+build's command line and every environment variable the build read, and GitHub
+masks secrets in logs, not in artifacts. So never pass a secret to a recorded
+build. The action's header says the same.
+
 The worker names the staged file from the blob's `Content-Disposition`,
 because StructuredLogger picks its reader by extension and `/gha/…/123` has
 none. It also unzips zipped artifacts, so workflows that upload binlogs the

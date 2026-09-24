@@ -31,7 +31,9 @@ export async function onRequestGet({ params, env }) {
         return text(404, 'Expected /gha/{owner}/{repo}/{artifactId}.');
     }
     const [owner, repo, id] = parts;
-    if (!NAME.test(owner) || !NAME.test(repo) || !/^\d+$/.test(id)) {
+    // Dot segments would be resolved inside the API URL. Cloudflare's edge normalizes them before
+    // they get here, and the host is fixed, but don't lean on either.
+    if (!NAME.test(owner) || !NAME.test(repo) || !/^\d+$/.test(id) || /^\.\.?$/.test(owner) || /^\.\.?$/.test(repo)) {
         return text(400, 'Malformed owner, repository or artifact id.');
     }
     if (!env.GITHUB_APP_ID || !env.GITHUB_APP_INSTALLATION_ID || !env.GITHUB_APP_PRIVATE_KEY) {
