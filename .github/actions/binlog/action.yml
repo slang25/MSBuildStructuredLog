@@ -1,0 +1,98 @@
+name: Upload binlog for the web viewer
+description: >
+  Uploads an MSBuild binlog as an artifact and puts a one-click link to it in
+  the job summary, which opens it in the web viewer.
+
+# Usage, after a build that wrote a binlog:
+#
+#   - run: dotnet build -bl:build-${{ matrix.os }}.binlog
+#   - uses: slang25/MSBuildStructuredLog/.github/actions/binlog@gpui-viewer
+#     if: always()          # the binlog matters most when the build failed
+#     with:
+#       path: build-${{ matrix.os }}.binlog
+#
+# The file goes up unzipped, and GitHub names the artifact after the file, so
+# the file name has to be unique within the run. Use a per-job name when
+# several jobs upload one.
+#
+# One-click viewing works for public repositories. In a private one the binlog
+# is still uploaded, and the summary says why there's no link.
+
+inputs:
+  path:
+    description: Path to the .binlog file.
+    required: true
+  viewer-url:
+    description: Where the web viewer is hosted.
+    default: https://structured-log-viewer.pages.dev
+  retention-days:
+    description: Days to keep the artifact. 0 uses the repository's setting.
+    default: '0'
+
+outputs:
+  artifact-id:
+    description: The uploaded artifact's id. Empty if nothing was uploaded.
+    value: ${{ steps.upload.outputs.artifact-id }}
+  viewer-link:
+    description: The one-click viewer link. Empty in private repositories.
+    value: ${{ steps.link.outputs.viewer-link }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check the binlog
+      id: check
+      shell: bash
+      env:
+        BINLOG: ${{ inputs.path }}
+      run: |
+        if [ ! -f "$BINLOG" ]; then
+          echo "::warning::No binlog at $BINLOG; nothing to upload. Did the build run with -bl:$BINLOG?"
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        name="$(basename "$BINLOG")"
+        case "$name" in
+          *.binlog) ;;
+          *) echo "::warning::$name doesn't end in .binlog; the viewer picks its reader by extension." ;;
+        esac
+        echo "found=true" >> "$GITHUB_OUTPUT"
+        echo "name=$name" >> "$GITHUB_OUTPUT"
+
+    - name: Upload
+      id: upload
+      if: steps.check.outputs.found == 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        path: ${{ inputs.path }}
+        # Unzipped: the artifact is the binlog itself, so the viewer fetches it directly.
+        archive: false
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Link it from the job summary
+      id: link
+      if: steps.upload.outputs.artifact-id != ''
+      shell: bash
+      env:
+        VIEWER: ${{ inputs.viewer-url }}
+        REPO: ${{ github.repository }}
+        PRIVATE: ${{ github.event.repository.private }}
+        ID: ${{ steps.upload.outputs.artifact-id }}
+        NAME: ${{ steps.check.outputs.name }}
+        ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+      run: |
+        if [ "$PRIVATE" = "true" ]; then
+          {
+            echo "### 📋 \`$NAME\`"
+            echo "Uploaded as [an artifact]($ARTIFACT_URL). One-click viewing only works for public repositories so far;"
+            echo "download it and open it at ${VIEWER%/}/ instead."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+        link="${VIEWER%/}/?binlog=/gha/$REPO/$ID"
+        {
+          echo "### 📋 [Open \`$NAME\` in the viewer]($link)"
+          echo "Or [download the artifact]($ARTIFACT_URL)."
+        } >> "$GITHUB_STEP_SUMMARY"
+        echo "viewer-link=$link" >> "$GITHUB_OUTPUT"
+        echo "Viewer: $link"

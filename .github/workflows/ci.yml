@@ -40,12 +40,18 @@ jobs:
           dotnet-version: |
             10.0.x
             11.0.x
+      # The bridge references StructuredLogger, .Utils and .Semantics, so building
+      # it covers the fork's whole .NET surface except the MCP server -- in one
+      # binlog, which the next step makes viewable in one click from the run's
+      # summary page.
       - name: Build
         run: |
-          dotnet build src/StructuredLogger/StructuredLogger.csproj -c Release
-          dotnet build src/StructuredLogger.Utils/StructuredLogger.Utils.csproj -c Release
-          dotnet build src/StructuredLogViewer.Semantics/StructuredLogViewer.Semantics.csproj -c Release
+          dotnet build src/StructuredLogViewer.NativeBridge/StructuredLogViewer.NativeBridge.csproj -c Release -bl:dotnet-build.binlog
           dotnet build src/BinlogMcp/BinlogMcp.csproj -c Release
+      - uses: ./.github/actions/binlog
+        if: always()
+        with:
+          path: dotnet-build.binlog
 
   # Upstream's test project is net472 and references System.Windows.Forms, so
   # it only runs on Windows. Worth a job of its own for one test:
