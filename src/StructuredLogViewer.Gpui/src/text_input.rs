@@ -557,6 +557,7 @@ impl gpui::Element for TextElement {
 
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _perf = crate::perf::scope("TextInput");
         let theme = *cx.global::<Theme>();
         let focused = self.focus_handle.is_focused(window);
         div()

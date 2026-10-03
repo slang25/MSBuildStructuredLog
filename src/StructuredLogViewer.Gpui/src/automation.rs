@@ -19,6 +19,7 @@
 //! {"cmd":"bounds","id":"tab-files"}
 //! {"cmd":"probes"}                         // every id currently laid out
 //! {"cmd":"dump"}                           // the workspace's state as JSON
+//! {"cmd":"perf"}                           // renders per view since the last perf
 //! {"cmd":"screenshot","path":"/tmp/x.png"}
 //! {"cmd":"sleep","ms":300}
 //! {"cmd":"quit"}
@@ -120,6 +121,7 @@ enum Command {
     Bounds { id: String },
     Probes,
     Dump,
+    Perf,
     Screenshot { path: String },
     Sleep { ms: u64 },
     Quit,
@@ -228,7 +230,11 @@ async fn apply(command: Command, window: WindowHandle<Workspace>, cx: &mut gpui:
             Ok(None)
         }
         Command::Click { id, x, y, button, modifiers } => {
-            fresh_frame(window, cx).await?;
+            // Coordinates need no layout; an id needs this frame's bounds. A
+            // refresh re-renders every cached view, so skip it when it can.
+            if id.is_some() {
+                fresh_frame(window, cx).await?;
+            }
             let position = target(id.as_deref(), x, y)?;
             on_screen(window, position, cx)?;
             let button = match button {
@@ -262,7 +268,11 @@ async fn apply(command: Command, window: WindowHandle<Workspace>, cx: &mut gpui:
             Ok(Some(json!({ "x": f32::from(position.x), "y": f32::from(position.y) })))
         }
         Command::Move { id, x, y } => {
-            fresh_frame(window, cx).await?;
+            // Coordinates need no layout; an id needs this frame's bounds. A
+            // refresh re-renders every cached view, so skip it when it can.
+            if id.is_some() {
+                fresh_frame(window, cx).await?;
+            }
             let position = target(id.as_deref(), x, y)?;
             on_screen(window, position, cx)?;
             cx.update_window(window.into(), |_, window, cx| {
@@ -280,7 +290,11 @@ async fn apply(command: Command, window: WindowHandle<Workspace>, cx: &mut gpui:
                 Some("ended") => TouchPhase::Ended,
                 Some(other) => anyhow::bail!("unknown touch phase {other:?}"),
             };
-            fresh_frame(window, cx).await?;
+            // Coordinates need no layout; an id needs this frame's bounds. A
+            // refresh re-renders every cached view, so skip it when it can.
+            if id.is_some() {
+                fresh_frame(window, cx).await?;
+            }
             let position = target(id.as_deref(), x, y)?;
             on_screen(window, position, cx)?;
             cx.update_window(window.into(), |_, window, cx| {
@@ -340,6 +354,7 @@ async fn apply(command: Command, window: WindowHandle<Workspace>, cx: &mut gpui:
             anyhow::ensure!(status.success(), "screencapture exited with {status}");
             Ok(Some(json!({ "path": path, "capture": how })))
         }
+        Command::Perf => Ok(Some(crate::perf::take())),
         Command::Sleep { ms } => {
             cx.background_executor().timer(Duration::from_millis(ms)).await;
             Ok(None)

@@ -39,6 +39,7 @@ scripts/drive.py /tmp/big.binlog --source /path/Sdk.props --line 50 -- \
 The app reads one JSON command per line from stdin and answers one JSON
 line each (`{"ok":true,"result":…}` or `{"ok":false,"error":…}`).
 Commands: `keys`, `type`, `action` (e.g. `source_editor::FindNext`),
+`perf` (renders per view since the last `perf`, see below),
 `click`/`move`/`scroll` by element id or window x/y (a scroll takes an
 optional trackpad phase — `'scroll editor 0 120 started'` — where the
 default is a wheel-like `moved`), `bounds`, `probes`,
@@ -78,3 +79,34 @@ command that needs it.
 - Focus is the thing to watch: a click on a non-focusable element hands
   focus to the nearest `track_focus` ancestor, which used to be the
   workspace root, where no pane's shortcuts apply.
+
+## Render cost (`perf`, `scripts/perf.py`)
+
+gpui rebuilds every view in the window whenever any one of them notifies,
+unless the view is embedded *cached*. The workspace embeds the tree, the
+timeline, the source well and every sidebar pane with
+`workspace::cached`, and the well embeds the inspector the same way, so a
+hover in the tree re-renders the tree (and its ancestors: the workspace
+root) and nothing else. Two rules keep that true:
+
+- A cached view only re-renders when *it* is notified (or resized, or the
+  window refreshes for a theme or focus change). If its `render` reads an
+  entity that is not one of its child views, it must `cx.observe` it —
+  the tree observes `Favorites` for its stars.
+- Nothing should call `window.refresh()` for something one view owns; that
+  re-renders every cached view. `cx.notify(view)` (with
+  `window.current_view()` captured during paint, as the scrollbars do)
+  repaints just the owner.
+
+Every `render` and list processor holds a `perf::scope`, which counts
+calls (and rows built) while `--automation` is on. `{"cmd":"perf"}`
+returns those counts and resets them; the
+`the_build_tree_does_not_re_render_its_neighbours` UI test asserts on them.
+
+`scripts/perf.py <file.binlog> [--source <path> --line N]` runs a release
+build through hover, arrow, scroll, search and timeline scenarios and
+prints each one's renders per view and the process CPU it took. Use it
+before and after a change that touches rendering: a view showing up in a
+scenario it has no part in is the bug to look for. Element lookups force a
+full-window refresh, so the script resolves targets up front and then
+drives by coordinates, one input per frame.

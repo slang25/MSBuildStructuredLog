@@ -36,6 +36,12 @@ impl Inspector {
 
     pub fn show(&mut self, node_id: String, cx: &mut Context<Self>) {
         self.generation += 1;
+        // Re-selecting the node on show (a second click on its row) needs no
+        // round trip; the bump above still drops any fetch for another node
+        // that is in flight.
+        if self.details.as_ref().is_some_and(|d| d.node.id == node_id) {
+            return;
+        }
         let generation = self.generation;
         let session = self.session.clone();
         cx.spawn(async move |this, cx| {
@@ -64,6 +70,7 @@ impl Inspector {
 
 impl Render for Inspector {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _perf = crate::perf::scope("Inspector");
         let theme = *cx.global::<Theme>();
         let Some(details) = &self.details else {
             return div()

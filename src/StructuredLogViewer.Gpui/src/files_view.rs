@@ -297,6 +297,7 @@ fn emit(node: &TreeNode, depth: usize, filter: &str, collapsed: &HashSet<String>
 
 impl Render for FilesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _perf = crate::perf::scope("FilesView");
         let theme = *cx.global::<Theme>();
         let count = self.rows.len();
 
@@ -311,6 +312,8 @@ impl Render for FilesView {
                 "files-rows",
                 count,
                 cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                    let mut perf = crate::perf::scope("FilesView.rows");
+                    perf.items(range.len());
                     range.filter(|ix| *ix < this.rows.len()).map(|ix| this.render_row(ix, &theme, cx)).collect()
                 }),
             )
@@ -609,6 +612,7 @@ fn utf16_to_byte(text: &str, offset: usize) -> Option<usize> {
 
 impl Render for FindInFilesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _perf = crate::perf::scope("FindInFilesView");
         let theme = *cx.global::<Theme>();
         let count = self.rows.len();
 
@@ -645,6 +649,8 @@ impl Render for FindInFilesView {
                             "find-in-files-rows",
                             count,
                             cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                                let mut perf = crate::perf::scope("FindInFilesView.rows");
+                                perf.items(range.len());
                                 range.filter(|ix| *ix < this.rows.len()).map(|ix| this.render_row(ix, &theme, cx)).collect()
                             }),
                         )

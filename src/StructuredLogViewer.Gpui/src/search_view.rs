@@ -11,10 +11,11 @@ use crate::text_input::{InputEvent, TextInput};
 use crate::theme::Theme;
 use gpui::{
     App, ClickEvent, Context, CursorStyle, ElementId, Entity, EventEmitter, FocusHandle, Focusable,
-    FontWeight, HighlightStyle, StyledText, Task, UniformListScrollHandle, Window, div, prelude::*,
-    px, uniform_list,
+    FontWeight, HighlightStyle, SharedString, StyledText, Task, UniformListScrollHandle, Window, div,
+    prelude::*, px, uniform_list,
 };
 use std::collections::HashSet;
+use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -39,8 +40,46 @@ pub enum SearchMode {
 struct ResultRow {
     path: String,
     depth: usize,
-    node: Arc<SearchTreeNode>,
+    /// The result's node; None for a grouping row (a project, a target).
+    node: Option<SharedNode>,
+    /// The row's text, composed once — on one line, so truncation works on
+    /// the whole of it — with the spans that are styled.
+    text: SharedString,
+    spans: Vec<(Range<usize>, SpanKind)>,
     has_children: bool,
+}
+
+#[derive(Clone, Copy)]
+enum SpanKind {
+    Time,
+    Match,
+}
+
+impl ResultRow {
+    fn new(node: &SearchTreeNode, path: String, depth: usize, has_children: bool) -> ResultRow {
+        let mut text = String::new();
+        let mut spans = Vec::new();
+        match &node.highlights {
+            Some(highlights) if !highlights.is_empty() => {
+                for span in highlights {
+                    let start = text.len();
+                    text.push_str(&span.text);
+                    let kind = if span.style.as_deref() == Some("time") {
+                        Some(SpanKind::Time)
+                    } else {
+                        span.is_highlight.then_some(SpanKind::Match)
+                    };
+                    if let Some(kind) = kind {
+                        spans.push((start..text.len(), kind));
+                    }
+                }
+            }
+            _ => text = node.node.as_ref().map(|n| n.title.clone()).or_else(|| node.text.clone()).unwrap_or_default(),
+        }
+        // Same byte length, so the spans still line up.
+        let text = text.replace('\n', " ");
+        ResultRow { path, depth, node: node.node.clone().map(Arc::new), text: text.into(), spans, has_children }
+    }
 }
 
 pub struct SearchView {
@@ -207,7 +246,7 @@ impl SearchView {
         let Some(response) = &self.response else { return };
         fn walk(rows: &mut Vec<ResultRow>, collapsed: &HashSet<String>, node: &SearchTreeNode, path: String, depth: usize) {
             let has_children = node.children.as_ref().map_or(false, |c| !c.is_empty());
-            rows.push(ResultRow { path: path.clone(), depth, node: Arc::new(node.clone()), has_children });
+            rows.push(ResultRow::new(node, path.clone(), depth, has_children));
             if !has_children || collapsed.contains(&path) {
                 return;
             }
@@ -233,7 +272,7 @@ impl SearchView {
     fn activate(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.selected = Some(ix);
         let Some(row) = self.rows.get(ix) else { return };
-        if let Some(node) = &row.node.node {
+        if let Some(node) = &row.node {
             cx.emit(SearchEvent::Reveal(node.id.clone()));
         } else if row.has_children {
             self.toggle(ix, cx);
@@ -248,13 +287,7 @@ impl SearchView {
             .iter()
             .take(500)
             .map(|row| {
-                let text = row
-                    .node
-                    .node
-                    .as_ref()
-                    .map(|n| n.title.clone())
-                    .or_else(|| row.node.text.clone())
-                    .unwrap_or_default();
+                let text = row.node.as_ref().map(|n| n.title.to_string()).unwrap_or_else(|| row.text.to_string());
                 serde_json::json!({ "depth": row.depth, "text": text, "hasChildren": row.has_children, "path": row.path })
             })
             .collect();
@@ -270,46 +303,34 @@ impl SearchView {
 
     fn render_row(&self, ix: usize, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
         let row = &self.rows[ix];
-        let node = row.node.clone();
         let depth = row.depth;
         let has_children = row.has_children;
         let collapsed = self.collapsed.contains(&row.path);
         let selected = self.selected == Some(ix);
 
         let surface = if selected { theme.selection_inactive } else { theme.sidebar_background };
-        let icon = match &node.node {
+        let icon = match &row.node {
             Some(summary) => style_for(summary, theme).icon,
             // Grouping rows (a project, a target) have no node of their own.
             None => crate::icons::NodeIcon::Chip(crate::icons::Tone::Folder),
         };
 
-        // One styled string per row so truncation works on the whole line.
-        let mut text = String::new();
-        let mut highlights = Vec::new();
-        match &node.highlights {
-            Some(spans) if !spans.is_empty() => {
-                for span in spans {
-                    let start = text.len();
-                    text.push_str(&span.text);
-                    let range = start..text.len();
-                    if span.style.as_deref() == Some("time") {
-                        highlights.push((range, HighlightStyle { color: Some(theme.text_secondary), ..Default::default() }));
-                    } else if span.is_highlight {
-                        highlights.push((
-                            range,
-                            HighlightStyle {
-                                color: Some(theme.highlight_text),
-                                background_color: Some(theme.highlight_background),
-                                font_weight: Some(FontWeight::SEMIBOLD),
-                                ..Default::default()
-                            },
-                        ));
-                    }
-                }
-            }
-            _ => text = node.node.as_ref().map(|n| n.title.clone()).or_else(|| node.text.clone()).unwrap_or_default(),
-        }
-        let text = text.replace('\n', " ");
+        let highlights: Vec<(Range<usize>, HighlightStyle)> = row
+            .spans
+            .iter()
+            .map(|(range, kind)| {
+                let style = match kind {
+                    SpanKind::Time => HighlightStyle { color: Some(theme.text_secondary), ..Default::default() },
+                    SpanKind::Match => HighlightStyle {
+                        color: Some(theme.highlight_text),
+                        background_color: Some(theme.highlight_background),
+                        font_weight: Some(FontWeight::SEMIBOLD),
+                        ..Default::default()
+                    },
+                };
+                (range.clone(), style)
+            })
+            .collect();
 
         let mut el = div()
             .id(ix)
@@ -363,7 +384,7 @@ impl SearchView {
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_ellipsis()
-                    .child(StyledText::new(text).with_highlights(highlights)),
+                    .child(StyledText::new(row.text.clone()).with_highlights(highlights)),
             )
             .into_any_element()
     }
@@ -371,6 +392,7 @@ impl SearchView {
 
 impl Render for SearchView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _perf = crate::perf::scope("SearchView");
         let theme = *cx.global::<Theme>();
         let count = self.rows.len();
 
@@ -414,6 +436,8 @@ impl Render for SearchView {
                             "search-results",
                             count,
                             cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                                let mut perf = crate::perf::scope("SearchView.rows");
+                                perf.items(range.len());
                                 range.filter(|ix| *ix < this.rows.len()).map(|ix| this.render_row(ix, &theme, cx)).collect()
                             }),
                         )

@@ -6,7 +6,7 @@
 use crate::icons::{CopyEnd, NodeIcon, Tone};
 use crate::model::{NodeSummary, format_duration};
 use crate::theme::Theme;
-use gpui::{Hsla, rgb};
+use gpui::{Hsla, SharedString, rgb};
 
 pub struct NodeStyle {
     pub icon: NodeIcon,
@@ -107,13 +107,13 @@ pub enum SegmentStyle {
 }
 
 pub struct Segment {
-    pub text: String,
+    pub text: SharedString,
     pub style: SegmentStyle,
 }
 
 pub fn segments(node: &NodeSummary) -> Vec<Segment> {
     let mut out = Vec::with_capacity(4);
-    let seg = |text: &str, style| Segment { text: text.to_string(), style };
+    let seg = |text: &str, style| Segment { text: SharedString::from(text.to_string()), style };
     match node.kind.as_str() {
         "Import" => {
             out.push(seg("Import", SegmentStyle::KindLabel));
@@ -146,13 +146,13 @@ pub fn segments(node: &NodeSummary) -> Vec<Segment> {
         _ => out.push(seg(&node.title, SegmentStyle::Primary)),
     }
     if let Some(ms) = node.duration_ms.filter(|ms| *ms > 0.0) {
-        out.push(Segment { text: format_duration(ms), style: SegmentStyle::Duration });
+        out.push(Segment { text: format_duration(ms).into(), style: SegmentStyle::Duration });
     }
     out
 }
 
 fn push_location(node: &NodeSummary, out: &mut Vec<Segment>) {
     if let (Some(line), Some(col)) = (node.prop("line"), node.prop("column")) {
-        out.push(Segment { text: format!("at ({line};{col})"), style: SegmentStyle::Secondary });
+        out.push(Segment { text: format!("at ({line};{col})").into(), style: SegmentStyle::Secondary });
     }
 }

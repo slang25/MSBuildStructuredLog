@@ -4,7 +4,7 @@
     scripts/drive.py /tmp/big.binlog --source /path/Sdk.props --line 50 -- \
         'keys cmd-f' 'type import' 'keys enter' dump 'screenshot /tmp/find.png'
 
-Each positional step after `--` is either a bare word (dump, probes, quit),
+Each positional step after `--` is either a bare word (dump, probes, perf, quit),
 `<cmd> <arg>` for keys/type/action/bounds/move/click/screenshot/sleep, or a
 raw JSON object. Replies are printed one per line. With no steps, reads
 steps from stdin. Exits non-zero if any step fails.
@@ -24,7 +24,7 @@ def to_command(step: str) -> dict:
         return json.loads(step)
     head, _, rest = step.partition(" ")
     rest = rest.strip()
-    if head in ("dump", "probes", "quit"):
+    if head in ("dump", "probes", "perf", "quit"):
         return {"cmd": head}
     if head == "keys":
         return {"cmd": "keys", "keys": rest}

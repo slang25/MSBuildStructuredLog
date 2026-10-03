@@ -3,11 +3,15 @@
 //! this model only knows how to splice them in and out.
 
 use crate::model::{NodeSummary, SharedNode};
+use crate::styling::{Segment, segments};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Row {
     pub node: SharedNode,
+    /// The row's text, composed once: rows are re-rendered on every hover
+    /// and scroll, and the node never changes.
+    pub segments: Arc<[Segment]>,
     pub depth: usize,
     pub expanded: bool,
     /// Children requested from the bridge and not yet applied.
@@ -15,6 +19,11 @@ pub struct Row {
 }
 
 impl Row {
+    fn new(node: NodeSummary, depth: usize) -> Row {
+        let segments = segments(&node).into();
+        Row { node: Arc::new(node), segments, depth, expanded: false, loading: false }
+    }
+
     pub fn has_children(&self) -> bool {
         self.node.has_children
     }
@@ -28,7 +37,7 @@ pub struct TreeModel {
 impl TreeModel {
     pub fn new(root: NodeSummary) -> Self {
         TreeModel {
-            rows: vec![Row { node: Arc::new(root), depth: 0, expanded: false, loading: false }],
+            rows: vec![Row::new(root, 0)],
         }
     }
 
@@ -70,9 +79,7 @@ impl TreeModel {
         }
         row.expanded = true;
         let depth = row.depth + 1;
-        let inserted = children
-            .into_iter()
-            .map(|c| Row { node: Arc::new(c), depth, expanded: false, loading: false });
+        let inserted = children.into_iter().map(|c| Row::new(c, depth));
         self.rows.splice(ix + 1..ix + 1, inserted);
         Some(ix)
     }
