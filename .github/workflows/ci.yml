@@ -106,6 +106,29 @@ jobs:
         # the unit tests running alongside them -- which is survivable locally and
         # was not on the runner.
         run: cargo test -- --test-threads=1
+      # The test binary has crashed (SIGSEGV) on the runner, never locally,
+      # on its first call into the bridge. macOS writes a crash report for
+      # it; print the crashed thread's stack so the next one is diagnosable.
+      - name: Crash report
+        if: failure()
+        run: |
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/structured_log_viewer_gpui*.ips 2>/dev/null | head -1); do
+            echo "== $f"
+            python3 - "$f" <<'PY'
+          import json, sys
+          lines = open(sys.argv[1]).read().split("\n", 1)
+          report = json.loads(lines[1])
+          print("exception:", report.get("exception"), "termination:", report.get("termination", {}).get("indicator"))
+          images = report.get("usedImages", [])
+          for i, thread in enumerate(report.get("threads", [])):
+              if not thread.get("triggered"):
+                  continue
+              print(f"thread {i} {thread.get('name', '')} {thread.get('queue', '')}")
+              for frame in thread.get("frames", [])[:60]:
+                  image = images[frame["imageIndex"]].get("name", "?") if frame.get("imageIndex") is not None and frame["imageIndex"] < len(images) else "?"
+                  print(f"  {image:<32} {frame.get('symbol', hex(frame.get('imageOffset', 0)))}")
+          PY
+          done
 
   # Not built here: src/StructuredLogViewer.Web/engine. Its toolchain is pinned
   # to a specific SDK + workload-manifest layout on a dev machine (see that
