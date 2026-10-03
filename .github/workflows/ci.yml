@@ -117,8 +117,13 @@ jobs:
           find ~/Library/Logs /Library/Logs -name '*structured_log_viewer*' 2>/dev/null | head
           T=$(ls -t target/debug/deps/structured_log_viewer_gpui-* | grep -v '\.d$' | head -1)
           for i in 1 2 3 4 5 6 7 8; do
-            lldb --batch -o run -k 'thread list' -k 'bt 80' -k quit -- "$T" --test-threads=1 ui_tests:: > lldb.txt 2>&1 || true
-            if grep -q "stop reason" lldb.txt; then
+            # SIGUSR1/2 are the .NET runtime's thread-suspension signals:
+            # routine, and not the crash.
+            lldb --batch -o 'process launch --stop-at-entry' \
+              -o 'process handle -s false -n false -p true SIGUSR1 SIGUSR2' -o continue \
+              -k 'thread list' -k 'bt 80' -k 'register read' -k quit \
+              -- "$T" --test-threads=1 ui_tests:: > lldb.txt 2>&1 || true
+            if grep -q "stop reason = [^s]" lldb.txt || grep -q "stop reason = signal SIGSEGV" lldb.txt; then
               echo "== attempt $i"
               grep -v "^test \|^running" lldb.txt | tail -200
               break
