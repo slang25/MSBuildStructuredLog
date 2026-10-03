@@ -23,18 +23,24 @@ done
 # SDK 10.0.203 resolves the newest loose workload manifest (10.0.111 -> packs 10.0.11) but only packs
 # <= 10.0.8 are installed (fixing that needs sudo). Point the SDK at a copy of the manifests with
 # everything above 10.0.108 removed so 10.0.108 -> packs 10.0.8 resolves.
-PIN="$HERE/.sdk-manifests-pin"
-if [ ! -d "$PIN/10.0.100" ]; then
-  mkdir -p "$PIN"
-  cp -R "$DOTNET_HOME/sdk-manifests/10.0.100" "$PIN/10.0.100"
-  cp -R "$DOTNET_HOME/sdk-manifests/10.0.200" "$PIN/10.0.200"
-  for m in "$PIN"/10.0.100/microsoft.net.workload.*; do
-    for v in 10.0.109 10.0.110 10.0.111; do rm -rf "$m/$v"; done
-  done
+#
+# WORKLOAD_PIN=0 skips this, for a dotnet whose workload was installed alongside its own manifests
+# (CI: setup-dotnet, then `dotnet workload install wasm-tools`) -- there the pin would hide the
+# packs that are actually present.
+if [ "${WORKLOAD_PIN:-1}" = "1" ]; then
+  PIN="$HERE/.sdk-manifests-pin"
+  if [ ! -d "$PIN/10.0.100" ]; then
+    mkdir -p "$PIN"
+    cp -R "$DOTNET_HOME/sdk-manifests/10.0.100" "$PIN/10.0.100"
+    cp -R "$DOTNET_HOME/sdk-manifests/10.0.200" "$PIN/10.0.200"
+    for m in "$PIN"/10.0.100/microsoft.net.workload.*; do
+      for v in 10.0.109 10.0.110 10.0.111; do rm -rf "$m/$v"; done
+    done
+  fi
+  export DOTNETSDK_WORKLOAD_MANIFEST_IGNORE_DEFAULT_ROOTS=1
+  export DOTNETSDK_WORKLOAD_MANIFEST_ROOTS="$PIN"
 fi
 export DOTNET_ROOT="$DOTNET_HOME"
-export DOTNETSDK_WORKLOAD_MANIFEST_IGNORE_DEFAULT_ROOTS=1
-export DOTNETSDK_WORKLOAD_MANIFEST_ROOTS="$PIN"
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
 export DOTNET_NOLOGO=1
 
