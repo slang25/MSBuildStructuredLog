@@ -1022,8 +1022,8 @@ impl Workspace {
                 let tree = loaded.tree.clone();
                 let well = loaded.well.clone();
                 let center: gpui::AnyElement = match (self.mode, &loaded.timeline) {
-                    (DetailMode::Timeline, Some(timeline)) => timeline.clone().into_any_element(),
-                    _ => tree.into_any_element(),
+                    (DetailMode::Timeline, Some(timeline)) => cached(timeline),
+                    _ => cached(&tree),
                 };
                 let mut body = div().flex().size_full().min_h_0();
                 if self.sidebar_visible {
@@ -1035,7 +1035,7 @@ impl Workspace {
                     .child(div().flex_1().min_w_0().h_full().child(center))
                     .child(self.divider(Divider::Inspector, theme, cx));
                 if self.inspector_visible {
-                    body = body.child(div().w(px(self.inspector_width)).h_full().flex_none().child(well));
+                    body = body.child(div().w(px(self.inspector_width)).h_full().flex_none().child(cached(&well)));
                 }
                 body.into_any_element()
             }
@@ -1051,15 +1051,15 @@ impl Workspace {
         let active = if tabs.contains(&self.sidebar_tab) { self.sidebar_tab } else { SidebarTab::SearchLog };
 
         let pane: gpui::AnyElement = match active {
-            SidebarTab::SearchLog => loaded.search.clone().into_any_element(),
-            SidebarTab::PropertiesAndItems => loaded.properties.clone().into_any_element(),
-            SidebarTab::Favorites => loaded.favorites_view.clone().into_any_element(),
+            SidebarTab::SearchLog => cached(&loaded.search),
+            SidebarTab::PropertiesAndItems => cached(&loaded.properties),
+            SidebarTab::Favorites => cached(&loaded.favorites_view),
             SidebarTab::Files => match &loaded.files {
-                Some(files) => files.clone().into_any_element(),
+                Some(files) => cached(files),
                 None => pane_placeholder(theme),
             },
             SidebarTab::FindInFiles => match &loaded.find_in_files {
-                Some(find) => find.clone().into_any_element(),
+                Some(find) => cached(find),
                 None => pane_placeholder(theme),
             },
         };
@@ -1145,6 +1145,16 @@ fn panel_glyph(which: Divider, open: bool, color: gpui::Hsla) -> impl IntoElemen
         .child(bar)
 }
 
+/// A child view that only re-renders when it is notified (or resized, or
+/// the theme changes). Without this, gpui rebuilds every view in the window
+/// whenever any one of them changes — hovering a tree row would re-lay-out
+/// the source editor and the search results too. A cached view must
+/// `cx.observe` any entity it reads in `render` that is not a child view,
+/// or it will miss that entity's changes.
+pub(crate) fn cached<V: Render>(view: &Entity<V>) -> gpui::AnyElement {
+    view.clone().cached(gpui::StyleRefinement::default().size_full()).into_any_element()
+}
+
 fn pane_placeholder(theme: &Theme) -> gpui::AnyElement {
     div()
         .size_full()
@@ -1223,6 +1233,7 @@ impl Workspace {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _perf = crate::perf::scope("Workspace");
         let theme = *cx.global::<Theme>();
         let titlebar = self.render_titlebar(&theme, window, cx);
         let body = self.render_body(&theme, cx);

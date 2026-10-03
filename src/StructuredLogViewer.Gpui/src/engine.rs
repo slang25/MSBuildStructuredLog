@@ -222,6 +222,8 @@ mod native {
         }
 
         pub fn load(path: &Path) -> Result<Arc<Engine>> {
+            #[cfg(target_os = "macos")]
+            clear_inherited_activation_signal();
             // SAFETY: the bridge has no load-time side effects beyond NativeAOT runtime init.
             let lib = unsafe { Library::new(path) }.with_context(|| format!("loading {}", path.display()))?;
             macro_rules! sym {
@@ -308,6 +310,32 @@ mod native {
             }
             // SAFETY: success: out is a bridge string.
             unsafe { self.take_string(out) }.ok_or_else(|| anyhow!("the bridge returned no payload"))
+        }
+    }
+
+    /// macOS resets a handled signal to `SIG_DFL` across `exec` but keeps its
+    /// `SA_SIGINFO` flag, so a process started by one that handled SIGUSR1
+    /// — any .NET process, the GitHub Actions runner among them — begins
+    /// with `{SIG_DFL, SA_SIGINFO}`. The NativeAOT runtime saves that as the
+    /// handler to chain to from its thread-suspension handler (SIGUSR1 on
+    /// macOS) and calls it: a jump to address 0 the first time a GC
+    /// suspends a thread. Fixed in the 10.0.13 runtime
+    /// (dotnet/runtime#132581); until the bridge is built with it, clear the
+    /// stale flag before the runtime starts. A real handler is left alone.
+    #[cfg(target_os = "macos")]
+    fn clear_inherited_activation_signal() {
+        // SAFETY: reads and, at most, resets one signal disposition to its
+        // default, before anything in the process has a stake in it.
+        unsafe {
+            let mut current: libc::sigaction = std::mem::zeroed();
+            if libc::sigaction(libc::SIGUSR1, std::ptr::null(), &mut current) != 0 {
+                return;
+            }
+            if current.sa_sigaction == libc::SIG_DFL && current.sa_flags & libc::SA_SIGINFO != 0 {
+                let mut default: libc::sigaction = std::mem::zeroed();
+                default.sa_sigaction = libc::SIG_DFL;
+                libc::sigaction(libc::SIGUSR1, &default, std::ptr::null_mut());
+            }
         }
     }
 

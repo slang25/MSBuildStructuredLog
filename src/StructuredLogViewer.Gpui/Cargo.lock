@@ -4950,6 +4950,7 @@ dependencies = [
  "gpui_platform",
  "gpui_web",
  "js-sys",
+ "libc",
  "libloading",
  "resvg",
  "serde",

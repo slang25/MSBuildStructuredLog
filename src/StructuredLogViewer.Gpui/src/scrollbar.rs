@@ -140,6 +140,18 @@ fn paint(bounds: Bounds<Pixels>, handle: &ScrollHandle, drag: &Rc<RefCell<Option
         ));
     }
 
+    // Only the view that owns the scrolling content repaints for the bar:
+    // a `window.refresh()` would re-render every cached view in the window.
+    let view = window.current_view();
+
+    // The thumbs brighten under the pointer; nothing else repaints this
+    // view when the pointer merely crosses into it.
+    window.on_mouse_event(move |event: &MouseMoveEvent, phase, _window, cx| {
+        if phase == DispatchPhase::Capture && bounds.contains(&event.position) != hovered {
+            cx.notify(view);
+        }
+    });
+
     // ----- dragging -----
     //
     // Registered on the window rather than the element so the drag survives
@@ -167,7 +179,7 @@ fn paint(bounds: Bounds<Pixels>, handle: &ScrollHandle, drag: &Rc<RefCell<Option
     {
         let drag = drag.clone();
         let handle = handle.clone();
-        window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, _cx| {
+        window.on_mouse_event(move |event: &MouseMoveEvent, phase, _window, cx| {
             if phase != DispatchPhase::Bubble {
                 return;
             }
@@ -189,14 +201,14 @@ fn paint(bounds: Bounds<Pixels>, handle: &ScrollHandle, drag: &Rc<RefCell<Option
                 Axis::Horizontal => offset.x = scrolled,
             }
             handle.set_offset(offset);
-            window.refresh();
+            cx.notify(view);
         });
     }
     {
         let drag = drag.clone();
-        window.on_mouse_event(move |_: &MouseUpEvent, phase, window, _cx| {
+        window.on_mouse_event(move |_: &MouseUpEvent, phase, _window, cx| {
             if phase == DispatchPhase::Bubble && drag.borrow_mut().take().is_some() {
-                window.refresh();
+                cx.notify(view);
             }
         });
     }

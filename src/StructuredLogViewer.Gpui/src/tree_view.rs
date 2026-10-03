@@ -6,7 +6,7 @@
 use crate::engine::Session;
 use crate::favorites::Favorites;
 use crate::model::SharedNode;
-use crate::styling::{SegmentStyle, segments, state_accent, style_for};
+use crate::styling::{SegmentStyle, state_accent, style_for};
 use crate::theme::Theme;
 use crate::tree::TreeModel;
 use gpui::{
@@ -412,6 +412,7 @@ impl TreeView {
 
 impl Render for TreeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _perf = crate::perf::scope("TreeView");
         let theme = *cx.global::<Theme>();
         if std::mem::take(&mut self.pending_focus) {
             self.focus_handle.focus(window, cx);
@@ -445,10 +446,13 @@ impl Render for TreeView {
                     "tree-rows",
                     count,
                     cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                        let mut perf = crate::perf::scope("TreeView.rows");
+                        perf.items(range.len());
                         let mut items = Vec::with_capacity(range.len());
                         for ix in range {
                             let Some(row) = this.model.row(ix) else { continue };
                             let node = row.node.clone();
+                            let row_segments = row.segments.clone();
                             let depth = row.depth;
                             let expanded = row.expanded;
                             let loading = row.loading;
@@ -553,7 +557,7 @@ impl Render for TreeView {
                                 .overflow_hidden()
                                 .whitespace_nowrap();
 
-                            for segment in segments(&node) {
+                            for segment in row_segments.iter() {
                                 let piece = match segment.style {
                                     SegmentStyle::Primary => div()
                                         .min_w_0()
@@ -563,14 +567,14 @@ impl Render for TreeView {
                                         .when(matches!(node.kind.as_str(), "Project" | "Build"), |d| {
                                             d.font_weight(FontWeight::SEMIBOLD)
                                         })
-                                        .child(segment.text),
+                                        .child(segment.text.clone()),
                                     SegmentStyle::KindLabel => div()
                                         .flex_none()
                                         .font_weight(FontWeight::SEMIBOLD)
                                         .text_color(if on_accent { theme.text_on_accent } else { style.color })
-                                        .child(segment.text),
+                                        .child(segment.text.clone()),
                                     SegmentStyle::Secondary => {
-                                        div().flex_none().text_color(secondary).child(segment.text)
+                                        div().flex_none().text_color(secondary).child(segment.text.clone())
                                     }
                                     SegmentStyle::Chip => div()
                                         .flex_none()
@@ -579,7 +583,7 @@ impl Render for TreeView {
                                         .text_size(px(11.))
                                         .bg(theme.chip_background)
                                         .text_color(theme.chip_text)
-                                        .child(segment.text),
+                                        .child(segment.text.clone()),
                                     SegmentStyle::Badge => div()
                                         .flex_none()
                                         .px(px(6.))
@@ -587,17 +591,17 @@ impl Render for TreeView {
                                         .text_size(px(11.))
                                         .bg(theme.badge_background)
                                         .text_color(theme.badge_text)
-                                        .child(segment.text),
+                                        .child(segment.text.clone()),
                                     SegmentStyle::Targets => div()
                                         .flex_none()
                                         .text_color(if on_accent { theme.text_on_accent } else { gpui::rgb(0x9b59d0).into() })
-                                        .child(segment.text),
+                                        .child(segment.text.clone()),
                                     SegmentStyle::Duration => div()
                                         .flex_none()
                                         .font_family(crate::theme::MONO)
                                         .text_size(px(11.))
                                         .text_color(secondary)
-                                        .child(segment.text),
+                                        .child(segment.text.clone()),
                                 };
                                 text = text.child(piece);
                             }

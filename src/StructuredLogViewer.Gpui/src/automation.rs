@@ -19,6 +19,7 @@
 //! {"cmd":"bounds","id":"tab-files"}
 //! {"cmd":"probes"}                         // every id currently laid out
 //! {"cmd":"dump"}                           // the workspace's state as JSON
+//! {"cmd":"perf"}                           // renders per view since the last perf
 //! {"cmd":"screenshot","path":"/tmp/x.png"}
 //! {"cmd":"sleep","ms":300}
 //! {"cmd":"quit"}
@@ -88,6 +89,31 @@ async fn fresh_frame(window: WindowHandle<Workspace>, cx: &mut gpui::AsyncApp) -
     Ok(())
 }
 
+/// Waits for the window to draw whatever earlier commands changed, without
+/// re-rendering anything they did not touch: a refresh re-renders every
+/// cached view, which is exactly what `perf` measurements must not see.
+/// Next-frame callbacks run at the start of a frame and its draw finishes
+/// in the same callback, so once this resumes that frame is down. A window
+/// that draws no frames (occluded, display asleep) times out instead.
+async fn next_frame(window: WindowHandle<Workspace>, cx: &mut gpui::AsyncApp) -> anyhow::Result<()> {
+    let (drawn, on_drawn) = futures::channel::oneshot::channel();
+    cx.update_window(window.into(), |_, window, _| {
+        window.on_next_frame(move |_, _| {
+            drawn.send(()).ok();
+        })
+    })?;
+    let timeout = cx.background_executor().timer(Duration::from_millis(250));
+    futures::future::select(on_drawn, timeout).await;
+    Ok(())
+}
+
+/// Before a pointer command: an element id needs fresh bounds, so a full
+/// refresh; coordinates only need the last command's changes on screen to
+/// hit-test against.
+async fn settle(by_id: bool, window: WindowHandle<Workspace>, cx: &mut gpui::AsyncApp) -> anyhow::Result<()> {
+    if by_id { fresh_frame(window, cx).await } else { next_frame(window, cx).await }
+}
+
 pub fn probe_ids() -> Vec<String> {
     let mut ids: Vec<String> = probes().lock().unwrap().keys().cloned().collect();
     ids.sort();
@@ -120,6 +146,7 @@ enum Command {
     Bounds { id: String },
     Probes,
     Dump,
+    Perf,
     Screenshot { path: String },
     Sleep { ms: u64 },
     Quit,
@@ -228,7 +255,7 @@ async fn apply(command: Command, window: WindowHandle<Workspace>, cx: &mut gpui:
             Ok(None)
         }
         Command::Click { id, x, y, button, modifiers } => {
-            fresh_frame(window, cx).await?;
+            settle(id.is_some(), window, cx).await?;
             let position = target(id.as_deref(), x, y)?;
             on_screen(window, position, cx)?;
             let button = match button {
@@ -262,7 +289,7 @@ async fn apply(command: Command, window: WindowHandle<Workspace>, cx: &mut gpui:
             Ok(Some(json!({ "x": f32::from(position.x), "y": f32::from(position.y) })))
         }
         Command::Move { id, x, y } => {
-            fresh_frame(window, cx).await?;
+            settle(id.is_some(), window, cx).await?;
             let position = target(id.as_deref(), x, y)?;
             on_screen(window, position, cx)?;
             cx.update_window(window.into(), |_, window, cx| {
@@ -280,7 +307,7 @@ async fn apply(command: Command, window: WindowHandle<Workspace>, cx: &mut gpui:
                 Some("ended") => TouchPhase::Ended,
                 Some(other) => anyhow::bail!("unknown touch phase {other:?}"),
             };
-            fresh_frame(window, cx).await?;
+            settle(id.is_some(), window, cx).await?;
             let position = target(id.as_deref(), x, y)?;
             on_screen(window, position, cx)?;
             cx.update_window(window.into(), |_, window, cx| {
@@ -340,6 +367,7 @@ async fn apply(command: Command, window: WindowHandle<Workspace>, cx: &mut gpui:
             anyhow::ensure!(status.success(), "screencapture exited with {status}");
             Ok(Some(json!({ "path": path, "capture": how })))
         }
+        Command::Perf => Ok(Some(crate::perf::take())),
         Command::Sleep { ms } => {
             cx.background_executor().timer(Duration::from_millis(ms)).await;
             Ok(None)

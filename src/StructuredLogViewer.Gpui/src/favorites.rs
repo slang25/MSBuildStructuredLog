@@ -68,6 +68,7 @@ impl FavoritesView {
 
 impl Render for FavoritesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _perf = crate::perf::scope("FavoritesView");
         let theme = *cx.global::<Theme>();
         let nodes: Vec<SharedNode> = self.favorites.read(cx).nodes().to_vec();
 

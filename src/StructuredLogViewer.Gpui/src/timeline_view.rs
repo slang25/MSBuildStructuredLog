@@ -473,6 +473,7 @@ struct Frame {
 
 impl Render for TimelineView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _perf = crate::perf::scope("TimelineView");
         let theme = *cx.global::<Theme>();
 
         let Some(layout) = self.layout.clone() else {
@@ -552,7 +553,41 @@ impl Render for TimelineView {
     }
 }
 
+/// Blocks narrower than this are merged with their neighbours when painted.
+const NARROW: f32 = 2.;
+
+/// Adjacent narrow blocks in one row, painted as a single rect: in the
+/// colour of the widest of them, unless one failed — a failure must not
+/// vanish into its neighbours.
+#[derive(Clone, Copy)]
+struct Run {
+    x0: Pixels,
+    x1: Pixels,
+    color: Hsla,
+    widest: Pixels,
+    failed: bool,
+}
+
+impl Run {
+    fn add(&mut self, x0: Pixels, w: Pixels, color: Hsla, failed: bool) {
+        self.x1 = self.x1.max(x0 + w);
+        if !self.failed && (failed || w > self.widest) {
+            self.color = color;
+            self.widest = w;
+            self.failed = failed;
+        }
+    }
+}
+
+fn paint_block(x0: Pixels, w: Pixels, y: Pixels, color: Hsla, window: &mut Window) -> Bounds<Pixels> {
+    let rect = Bounds::new(point(x0, y), size(w, px(BLOCK_ROW - 2.)));
+    let border = if f32::from(w) > 3. { px(0.5) } else { px(0.) };
+    window.paint_quad(quad(rect, px(2.), color.opacity(0.55), gpui::Edges::all(border), color, BorderStyle::Solid));
+    rect
+}
+
 fn paint_chart(bounds: Bounds<Pixels>, frame: Frame, window: &mut Window, cx: &mut gpui::App) {
+    let mut perf = crate::perf::scope("TimelineView.blocks");
     let theme = frame.theme;
     let origin = bounds.origin;
     let width: f32 = bounds.size.width.into();
@@ -585,6 +620,12 @@ fn paint_chart(bounds: Bounds<Pixels>, frame: Frame, window: &mut Window, cx: &m
                 continue;
             }
             let rows_top = lane.y + LANE_HEADER;
+            // Zoomed out, thousands of blocks share each pixel of a row. A
+            // row's blocks are disjoint and arrive in start order, so narrow
+            // ones that touch are painted as one run rather than a quad
+            // apiece — otherwise panning a big build paints every block.
+            let row_y = |indent: usize| y_for(rows_top + indent as f32 * BLOCK_ROW + 1.);
+            let mut runs: Vec<Option<Run>> = vec![None; lane.rows.iter().map(|p| p.indent + 1).max().unwrap_or(0)];
             for placed in &lane.rows {
                 let block = &placed.block;
                 if block.start > visible_end {
@@ -596,18 +637,28 @@ fn paint_chart(bounds: Bounds<Pixels>, frame: Frame, window: &mut Window, cx: &m
                 let x0 = x_for(block.start);
                 let x1 = x_for(block.end);
                 let w = (x1 - x0).max(px(MIN_VISIBLE));
-                let y = y_for(rows_top + placed.indent as f32 * BLOCK_ROW + 1.);
-                let rect = Bounds::new(point(x0, y), size(w, px(BLOCK_ROW - 2.)));
                 let color = block_color(&block.kind, block.has_error, &theme);
-                let border = if f32::from(w) > 3. { px(0.5) } else { px(0.) };
-                window.paint_quad(quad(
-                    rect,
-                    px(2.),
-                    color.opacity(0.55),
-                    gpui::Edges::all(border),
-                    color,
-                    BorderStyle::Solid,
-                ));
+                let run = &mut runs[placed.indent];
+                if w < px(NARROW) {
+                    match run {
+                        Some(run) if x0 <= run.x1 + px(1.) => run.add(x0, w, color, block.has_error),
+                        _ => {
+                            let next = Run { x0, x1: x0 + w, color, widest: w, failed: block.has_error };
+                            if let Some(done) = run.replace(next) {
+                                perf.items(1);
+                                paint_block(done.x0, done.x1 - done.x0, row_y(placed.indent), done.color, window);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if let Some(done) = run.take() {
+                    perf.items(1);
+                    paint_block(done.x0, done.x1 - done.x0, row_y(placed.indent), done.color, window);
+                }
+                perf.items(1);
+                let y = row_y(placed.indent);
+                let rect = paint_block(x0, w, y, color, window);
                 if f32::from(w) > 40. {
                     if let Some(text) = block.text.as_ref().filter(|t| !t.is_empty()) {
                         let avail = f32::from(w) - 8.;
@@ -626,6 +677,13 @@ fn paint_chart(bounds: Bounds<Pixels>, frame: Frame, window: &mut Window, cx: &m
                             });
                         }
                     }
+                }
+            }
+
+            for (indent, run) in runs.into_iter().enumerate() {
+                if let Some(done) = run {
+                    perf.items(1);
+                    paint_block(done.x0, done.x1 - done.x0, row_y(indent), done.color, window);
                 }
             }
 

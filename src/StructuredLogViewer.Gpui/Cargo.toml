@@ -28,6 +28,9 @@ libloading = "0.8"
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.9"
 core-graphics = "0.23"
+# Engine::load repairs an inherited SIGUSR1 disposition before the NativeAOT
+# runtime starts (already in the lock file through gpui).
+libc = "0.2"
 
 # Web: gpui_web directly (not via gpui_platform) so its default
 # `multithreaded` feature stays off — that feature needs wasm atomics and a

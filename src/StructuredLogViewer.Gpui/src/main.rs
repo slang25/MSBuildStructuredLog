@@ -17,6 +17,7 @@ mod icons;
 mod inspector;
 mod model;
 mod msbuild;
+mod perf;
 mod scrollbar;
 mod search_view;
 mod source_view;

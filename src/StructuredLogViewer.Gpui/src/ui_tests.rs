@@ -226,6 +226,43 @@ fn cmd_f_reaches_the_log_search_from_the_workspace_root(cx: &mut TestAppContext)
     assert_eq!(state["search"]["query"], "csc", "{state}");
 }
 
+/// A change in one pane repaints that pane, not the window: the panes are
+/// cached views (`workspace::cached`), so hovering and walking the build
+/// tree must leave the search pane alone — and the well, until a selection
+/// gives the inspector inside it something new to show.
+#[gpui::test]
+fn the_build_tree_does_not_re_render_its_neighbours(cx: &mut TestAppContext) {
+    let _serial = serial();
+    let Some((workspace, cx)) = open_workspace(cx) else { return };
+    let rows: Vec<_> = (0..4).map(|i| automation::bounds(&format!("tree-row-{i}")).expect("tree row laid out")).collect();
+    let renders = |perf: &serde_json::Value, view: &str| perf[view]["calls"].as_u64().unwrap_or(0);
+
+    crate::perf::take();
+    for row in &rows {
+        cx.simulate_mouse_move(row.center(), None, Modifiers::default());
+        cx.run_until_parked();
+    }
+    let perf = crate::perf::take();
+    assert!(renders(&perf, "TreeView") > 0, "hover highlights repaint the tree: {perf}");
+    assert_eq!(renders(&perf, "SearchView"), 0, "{perf}");
+    assert_eq!(renders(&perf, "SourceWell"), 0, "{perf}");
+    assert_eq!(renders(&perf, "Inspector"), 0, "{perf}");
+
+    // A click selects a row and gives the tree the keyboard. Focus moving
+    // repaints the whole window, so let that frame land first.
+    cx.simulate_click(rows[1].center(), Modifiers::default());
+    cx.simulate_keystrokes("down");
+    cx.run_until_parked();
+    crate::perf::take();
+    cx.simulate_keystrokes("down down");
+    cx.run_until_parked();
+    let perf = crate::perf::take();
+    let state = workspace.update_in(cx, |w, window, cx| w.describe(window, cx));
+    assert_eq!((state["focus"].as_str(), state["tree"]["selected"].as_u64()), (Some("tree"), Some(4)), "{state}");
+    assert!(renders(&perf, "Inspector") > 0, "the selection reaches the inspector: {perf}");
+    assert_eq!(renders(&perf, "SearchView"), 0, "{perf}");
+}
+
 #[gpui::test]
 fn clicking_a_source_tab_keeps_focus_in_the_well(cx: &mut TestAppContext) {
     let _serial = serial();

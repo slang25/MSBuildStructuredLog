@@ -1338,6 +1338,8 @@ impl SourceWell {
             "source-lines",
             line_count,
             cx.processor(move |this, range: Range<usize>, _window, cx| {
+                let mut perf = crate::perf::scope("SourceWell.lines");
+                perf.items(range.len());
                 let theme = *cx.global::<Theme>();
                 let char_width = this.geometry.map(|g| g.char_width);
                 let Some(tab) = this.tabs.iter().find(|t| t.id == tab_id_for_rows) else { return Vec::new() };
@@ -1884,15 +1886,20 @@ fn render_line(tab: &Tab, ix: usize, theme: &Theme, row: &RowContext, cx: &mut C
         highlights = overlay_backgrounds(highlights, &washes, text_len);
     }
 
-    // Line-relative tokens.
-    let line_tokens: Vec<(Range<usize>, Token)> = tab
+    // Line-relative tokens. They are sorted by start, so this line's are
+    // one slice found by binary search — scanning them all, per visible
+    // line, per frame, is quadratic in the size of the file.
+    let line_end = range.start + text_len;
+    let line_tokens: Vec<(Range<usize>, &Token)> = tab
         .semantics
         .as_ref()
         .map(|s| {
-            s.tokens
+            let first = s.tokens.partition_point(|t| t.range.start < range.start);
+            s.tokens[first..]
                 .iter()
-                .filter(|t| t.range.start >= range.start && t.range.end <= range.start + text_len)
-                .map(|t| (t.range.start - range.start..t.range.end - range.start, t.clone()))
+                .take_while(|t| t.range.start <= line_end)
+                .filter(|t| t.range.end <= line_end)
+                .map(|t| (t.range.start - range.start..t.range.end - range.start, t))
                 .collect()
         })
         .unwrap_or_default();
@@ -1914,7 +1921,7 @@ fn render_line(tab: &Tab, ix: usize, theme: &Theme, row: &RowContext, cx: &mut C
         let tokens: Vec<Token> = line_tokens
             .iter()
             .filter(|(r, _)| r.start >= piece.start && r.end <= piece.end)
-            .map(|(_, t)| t.clone())
+            .map(|(_, t)| (*t).clone())
             .collect();
         let click_ranges: Vec<Range<usize>> = line_tokens
             .iter()
@@ -2124,6 +2131,7 @@ fn render_skipped(
 
 impl Render for SourceWell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _perf = crate::perf::scope("SourceWell");
         let theme = *cx.global::<Theme>();
         if std::mem::take(&mut self.refocus_editor) {
             self.focus_handle.focus(window, cx);
@@ -2133,7 +2141,7 @@ impl Render for SourceWell {
         let mut body = div().flex().flex_col().size_full().min_h_0();
         if self.selected == 0 || self.selected > self.tabs.len() {
             self.selected = 0;
-            body = body.child(div().size_full().child(self.inspector.clone()));
+            body = body.child(div().size_full().child(crate::workspace::cached(&self.inspector)));
         } else {
             let tab_ix = self.selected - 1;
             // The find bar follows the selected tab.
