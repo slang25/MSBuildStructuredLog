@@ -21,10 +21,20 @@ on:
       - src/StructuredLogViewer.Web/**
       - src/StructuredLogViewer.Gpui/**
       - src/StructuredLogViewer.NativeBridge/**
-      # The engine compiles these in, upstream's sync PRs included.
+      # The engine compiles these in, upstream's sync PRs included: the
+      # bridge's project references, the two files it pulls in from
+      # BinlogMcp, and the repo-root build files those projects inherit
+      # (the engine's own empty Directory.Build.* shield only the engine).
       - src/StructuredLogger/**
       - src/StructuredLogger.Utils/**
       - src/StructuredLogViewer.Semantics/**
+      - src/BinlogMcp/NodeId.cs
+      - src/BinlogMcp/SearchSyntax.md
+      - Directory.Build.props
+      - Directory.Build.targets
+      - Directory.Build.rsp
+      - Directory.Packages.props
+      - nuget.config
       - .github/workflows/web.yml
   workflow_dispatch:
 
