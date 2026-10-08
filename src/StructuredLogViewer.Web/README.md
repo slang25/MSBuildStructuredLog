@@ -45,8 +45,13 @@ URL parameters stand in for the command line: `binlog=<url>`, `search=`,
 uses a hidden `<input type=file>`; the file is handed to the worker and never
 touches the main thread's memory.
 
-Deployed with `./deploy.sh` to Cloudflare Pages as
-<https://structured-log-viewer.pages.dev>.
+Deployed to Cloudflare Pages as <https://structured-log-viewer.pages.dev>
+by `.github/workflows/web.yml` on every push to `gpui-viewer` (pull requests
+that touch the viewer or the engine get it built, not deployed). That
+workflow runs the same scripts; `./deploy.sh` still deploys from a dev
+machine, after `npx wrangler login`. CI installs the wasm-tools workload with
+the SDK it builds with, so it runs the engine build with `WORKLOAD_PIN=0`
+(see `engine/build.sh`).
 
 ## Binlogs from GitHub Actions
 

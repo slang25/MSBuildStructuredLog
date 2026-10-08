@@ -1,0 +1,97 @@
+name: web
+
+# Publishes the browser viewer to Cloudflare Pages
+# (https://structured-log-viewer.pages.dev) on every push to the default
+# branch -- what src/StructuredLogViewer.Web/deploy.sh does from a dev
+# machine, through the same scripts. Pages' own git integration cannot build
+# it (no Rust 1.97.1, trunk or wasm-tools in its image), so the build runs
+# here and only dist/ and functions/ go up.
+#
+# Needs two repository secrets: CLOUDFLARE_API_TOKEN (an API token with
+# Account > Cloudflare Pages > Edit) and CLOUDFLARE_ACCOUNT_ID. The /gha/*
+# Function's own secrets live on the Pages project and are untouched.
+
+on:
+  push:
+    branches: [gpui-viewer]
+  # Pull requests that could break the web build get it built (not
+  # deployed), so it is not first found broken after a merge.
+  pull_request:
+    paths:
+      - src/StructuredLogViewer.Web/**
+      - src/StructuredLogViewer.Gpui/**
+      - src/StructuredLogViewer.NativeBridge/**
+      # The engine compiles these in, upstream's sync PRs included: the
+      # bridge's project references, the two files it pulls in from
+      # BinlogMcp, and the repo-root build files those projects inherit
+      # (the engine's own empty Directory.Build.* shield only the engine).
+      - src/StructuredLogger/**
+      - src/StructuredLogger.Utils/**
+      - src/StructuredLogViewer.Semantics/**
+      - src/BinlogMcp/NodeId.cs
+      - src/BinlogMcp/SearchSyntax.md
+      - Directory.Build.props
+      - Directory.Build.targets
+      - Directory.Build.rsp
+      - Directory.Packages.props
+      - nuget.config
+      - .github/workflows/web.yml
+  workflow_dispatch:
+
+# One deploy at a time, and never cancel one halfway through an upload; a
+# push that lands mid-deploy waits, then deploys the newer commit. PR builds
+# get a group each, and a newer push to the PR replaces an older build.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('web-pr-{0}', github.event.number) || 'web-deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: 1
+  # setup-dotnet's Linux default (/usr/share/dotnet) is root's, and the
+  # workload install writes into the dotnet it runs from.
+  DOTNET_INSTALL_DIR: /home/runner/.dotnet
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The engine's global.json pins the 10.0.2xx band, which is the one
+      # with a wasm-tools workload.
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: src/StructuredLogViewer.Web/engine/global.json
+      - name: wasm-tools workload
+        working-directory: src/StructuredLogViewer.Web/engine
+        run: dotnet workload install wasm-tools
+
+      # rust-toolchain.toml pins the channel; rustup installs it on first use
+      # in that directory, and the target has to be added to that toolchain.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src/StructuredLogViewer.Gpui
+      - name: wasm32 target and trunk
+        working-directory: src/StructuredLogViewer.Gpui
+        run: |
+          rustup target add wasm32-unknown-unknown
+          curl -fsSL https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C "$HOME/.cargo/bin"
+          trunk --version
+
+      # The workload above was installed with this SDK's own manifests, so
+      # the dev machine's manifest pin (engine/build.sh) is not wanted here.
+      - name: Build
+        working-directory: src/StructuredLogViewer.Web
+        env:
+          WORKLOAD_PIN: "0"
+        run: DOTNET_HOME="$DOTNET_ROOT" ./build.sh --no-serve
+
+      - name: Deploy
+        if: github.event_name != 'pull_request'
+        working-directory: src/StructuredLogViewer.Web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: ./deploy.sh --skip-build
